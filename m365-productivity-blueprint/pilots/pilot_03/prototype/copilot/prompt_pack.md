@@ -1,5 +1,7 @@
 # 바로 쓰는 Copilot 프롬프트 팩 (SCM 반복 문서용)
 
+> 🆕 효과가 큰 순서로 고른 **파워 프롬프트 12선**(아침 상황판·놓친 약속 찾기·회의 3분 정리·수급 리스크 레이더 등)은 [`power_prompts.md`](power_prompts.md).
+
 > 사용처: Outlook·Excel·Word의 Copilot, 또는 Microsoft 365 Copilot 앱 '업무' 탭. 회사 계정 Copilot만 사용.
 > 원칙: Copilot 결과는 **초안**이다. 수치·날짜·공장코드는 원문과 대조한 뒤 보낸다. 실제 데이터 입력 전 회사 Copilot 정책 확인(`APPROVALS.md` I-04).
 > 효과 측정: 쓸 때마다 시간기록 비고에 '프롬프트 #번호, 절약 추정 분'을 적는다.
