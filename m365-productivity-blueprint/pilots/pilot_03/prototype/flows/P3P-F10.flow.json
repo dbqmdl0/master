@@ -1,0 +1,303 @@
+{
+  "id": "P3P-F10",
+  "name": "P3P-F10 공장 자료 메일 → 첨부 자동 저장·수신 대장",
+  "purpose": "공장 발신자(FactorySenders)의 첨부 메일이 오면 Excel·CSV 첨부를 OneDrive '공장코드/날짜' 폴더에 자동 저장하고 수신 대장에 기록. 다운로드·이름 바꾸기·폴더 정리·수신 확인 제거, 수신 패턴 자동 축적.",
+  "trigger": {
+    "kind": "Outlook.WhenANewEmailArrivesV3",
+    "inputs": {
+      "folder": "Inbox",
+      "includeAttachments": true,
+      "onlyWithAttachments": true
+    },
+    "concurrency": 1
+  },
+  "actions": {
+    "Config": {
+      "type": "Compose",
+      "note": "설정값 모음. 샌드박스→운영 전환 시 이 값만 바꾼다(트리거의 사이트·목록은 직접 다시 선택).",
+      "inputs": {
+        "site": "{{SITE_URL}}",
+        "me": "{{ME}}",
+        "hostWorkbook": "{{HOST_WORKBOOK}}",
+        "scriptFolder": "{{SCRIPT_FOLDER}}",
+        "prototypeMode": true,
+        "channel": "{{NOTIFY_CHANNEL}}",
+        "factoryFolder": "{{FACTORY_FOLDER}}",
+        "links": {
+          "myActions": "{{VIEW_MY_ACTIONS}}",
+          "decisionQueue": "{{VIEW_DECISION_QUEUE}}",
+          "candidates": "{{VIEW_CANDIDATES}}"
+        }
+      },
+      "runAfter": {}
+    },
+    "Try": {
+      "type": "Scope",
+      "runAfter": {
+        "Config": [
+          "Succeeded"
+        ]
+      },
+      "actions": {
+        "Get_senders": {
+          "type": "Connector",
+          "connector": "SharePoint",
+          "operation": "Get items",
+          "inputs": {
+            "site": "@{outputs('Config')?['site']}",
+            "list": "FactorySenders",
+            "top": 500
+          },
+          "note": "공장 발신자 설정",
+          "runAfter": {}
+        },
+        "Match_sender": {
+          "type": "FilterArray",
+          "note": "발신자가 공장 발신자 목록에 있는지",
+          "inputs": {
+            "from": "@body('Get_senders')?['value']",
+            "where": "@contains(toLower(coalesce(triggerOutputs()?['body/from'], '')), toLower(item()?['SenderPattern']))"
+          },
+          "runAfter": {
+            "Get_senders": [
+              "Succeeded"
+            ]
+          }
+        },
+        "If_not_factory": {
+          "type": "If",
+          "expression": "@equals(length(body('Match_sender')), 0)",
+          "actions": {
+            "Stop_not_factory": {
+              "type": "Terminate",
+              "inputs": {
+                "runStatus": "Succeeded",
+                "runError": {
+                  "code": "NotFactory",
+                  "message": "공장 발신 메일 아님"
+                }
+              },
+              "runAfter": {}
+            }
+          },
+          "note": "공장 메일이 아니면 즉시 종료(대부분의 메일은 여기서 끝)",
+          "runAfter": {
+            "Match_sender": [
+              "Succeeded"
+            ]
+          }
+        },
+        "Find_existing": {
+          "type": "Connector",
+          "connector": "SharePoint",
+          "operation": "Get items",
+          "inputs": {
+            "site": "@{outputs('Config')?['site']}",
+            "list": "FactoryInbox",
+            "filter": "SourceMessageId eq '@{replace(triggerOutputs()?['body/id'], '''', '''''')}'",
+            "top": 1
+          },
+          "note": "같은 메일 중복 저장 방지",
+          "runAfter": {
+            "If_not_factory": [
+              "Succeeded"
+            ]
+          }
+        },
+        "If_duplicate": {
+          "type": "If",
+          "expression": "@greater(length(body('Find_existing')?['value']), 0)",
+          "actions": {
+            "Stop_duplicate": {
+              "type": "Terminate",
+              "inputs": {
+                "runStatus": "Succeeded",
+                "runError": {
+                  "code": "Duplicate",
+                  "message": "이미 저장된 메일"
+                }
+              },
+              "runAfter": {}
+            }
+          },
+          "note": "",
+          "runAfter": {
+            "Find_existing": [
+              "Succeeded"
+            ]
+          }
+        },
+        "Excel_files": {
+          "type": "FilterArray",
+          "note": "Excel·CSV 첨부만 저장",
+          "inputs": {
+            "from": "@coalesce(triggerOutputs()?['body/attachments'], createArray())",
+            "where": "@or(endsWith(item()?['name'], '.xlsx'), endsWith(item()?['name'], '.xlsm'), endsWith(item()?['name'], '.xls'), endsWith(item()?['name'], '.csv'))"
+          },
+          "runAfter": {
+            "If_duplicate": [
+              "Succeeded"
+            ]
+          }
+        },
+        "If_no_excel": {
+          "type": "If",
+          "expression": "@equals(length(body('Excel_files')), 0)",
+          "actions": {
+            "Stop_no_excel": {
+              "type": "Terminate",
+              "inputs": {
+                "runStatus": "Succeeded",
+                "runError": {
+                  "code": "NoExcel",
+                  "message": "Excel·CSV 첨부 없음"
+                }
+              },
+              "runAfter": {}
+            }
+          },
+          "note": "",
+          "runAfter": {
+            "Excel_files": [
+              "Succeeded"
+            ]
+          }
+        },
+        "Folder": {
+          "type": "Compose",
+          "note": "저장 폴더: 기본 폴더/공장코드/수신일(KST)",
+          "inputs": "@{concat(outputs('Config')?['factoryFolder'], '/', first(body('Match_sender'))?['PlantCode'], '/', convertFromUtc(triggerOutputs()?['body/receivedDateTime'], 'Korea Standard Time', 'yyyy-MM-dd'))}",
+          "runAfter": {
+            "If_no_excel": [
+              "Succeeded"
+            ]
+          }
+        },
+        "Save_files": {
+          "type": "Foreach",
+          "foreach": "@body('Excel_files')",
+          "note": "첨부마다 저장(파일 이름 앞에 수신 시각)",
+          "actions": {
+            "Create_file": {
+              "type": "Connector",
+              "connector": "OneDrive for Business",
+              "operation": "Create file",
+              "note": "OneDrive에 저장",
+              "runAfter": {},
+              "inputs": {
+                "folderPath": "@{outputs('Folder')}",
+                "name": "@{concat(convertFromUtc(triggerOutputs()?['body/receivedDateTime'], 'Korea Standard Time', 'HHmm'), '_', items('Save_files')?['name'])}",
+                "body": "@base64ToBinary(items('Save_files')?['contentBytes'])"
+              }
+            }
+          },
+          "runAfter": {
+            "Folder": [
+              "Succeeded"
+            ]
+          }
+        },
+        "File_names": {
+          "type": "Select",
+          "note": "저장한 파일 이름 목록",
+          "inputs": {
+            "from": "@body('Excel_files')",
+            "select": "@item()?['name']"
+          },
+          "runAfter": {
+            "Save_files": [
+              "Succeeded"
+            ]
+          }
+        },
+        "Log_inbox": {
+          "type": "Connector",
+          "connector": "SharePoint",
+          "operation": "Create item",
+          "inputs": {
+            "site": "@{outputs('Config')?['site']}",
+            "list": "FactoryInbox",
+            "item": {
+              "Title": "@{if(empty(triggerOutputs()?['body/subject']), '(제목 없음)', if(greater(length(triggerOutputs()?['body/subject']), 250), substring(triggerOutputs()?['body/subject'], 0, 250), triggerOutputs()?['body/subject']))}",
+              "PlantCode": "@{first(body('Match_sender'))?['PlantCode']}",
+              "Sender": "@{coalesce(triggerOutputs()?['body/from'], '')}",
+              "ReceivedAt": "@{triggerOutputs()?['body/receivedDateTime']}",
+              "FileCount": "@length(body('Excel_files'))",
+              "FileNames": "@{join(body('File_names'), ', ')}",
+              "SavedFolder": "@{outputs('Folder')}",
+              "SourceMessageId": "@{triggerOutputs()?['body/id']}"
+            }
+          },
+          "note": "수신 대장 기록",
+          "runAfter": {
+            "File_names": [
+              "Succeeded"
+            ]
+          }
+        }
+      }
+    },
+    "Catch": {
+      "type": "Scope",
+      "runAfter": {
+        "Try": [
+          "Failed",
+          "TimedOut"
+        ]
+      },
+      "actions": {
+        "Failed_actions": {
+          "type": "FilterArray",
+          "note": "Try 안에서 실패한 액션만 추림",
+          "inputs": {
+            "from": "@result('Try')",
+            "where": "@equals(item()?['status'], 'Failed')"
+          },
+          "runAfter": {}
+        },
+        "Log_error": {
+          "type": "Connector",
+          "connector": "SharePoint",
+          "operation": "Create item",
+          "inputs": {
+            "site": "@{outputs('Config')?['site']}",
+            "list": "FlowErrorLog",
+            "item": {
+              "Title": "@{workflow()?['tags']?['flowDisplayName']}",
+              "FlowRunId": "@{workflow()?['run']?['name']}",
+              "FailedAction": "@{coalesce(first(body('Failed_actions'))?['name'], '')}",
+              "ErrorMessage": "@{coalesce(first(body('Failed_actions'))?['error']?['message'], '상세 메시지 없음(실행 기록 확인)')}",
+              "Severity/Value": "Critical",
+              "Resolved": false,
+              "RunUrl": "@{concat('https://make.powerautomate.com/environments/', workflow()?['tags']?['environmentName'], '/flows/', workflow()?['name'], '/runs/', workflow()?['run']?['name'])}"
+            }
+          },
+          "note": "공통 오류 로그 기록",
+          "runAfter": {
+            "Failed_actions": [
+              "Succeeded"
+            ]
+          }
+        },
+        "Terminate_failed": {
+          "type": "Terminate",
+          "inputs": {
+            "runStatus": "Failed",
+            "runError": {
+              "code": "FlowFailed",
+              "message": "@{concat('실패 액션: ', coalesce(first(body('Failed_actions'))?['name'], '?'))}"
+            }
+          },
+          "runAfter": {
+            "Log_error": [
+              "Succeeded",
+              "Failed",
+              "Skipped"
+            ]
+          }
+        }
+      },
+      "note": "실행 후 구성: Try가 '실패함'·'시간 초과됨'일 때"
+    }
+  }
+}

@@ -1,0 +1,247 @@
+{
+  "id": "P3P-F12",
+  "name": "P3P-F12 주간 정리(주간보고 초안)",
+  "purpose": "금요일 16:00 이번 주 완료·신규·기한초과·결정·회신 대기·공장 자료 수신 패턴을 자동 집계한 주간보고 초안을 본인에게.",
+  "trigger": {
+    "kind": "Recurrence",
+    "recurrence": {
+      "frequency": "Week",
+      "interval": 1,
+      "timeZone": "Korea Standard Time",
+      "schedule": {
+        "weekDays": [
+          "Friday"
+        ],
+        "hours": [
+          16
+        ],
+        "minutes": [
+          0
+        ]
+      }
+    }
+  },
+  "actions": {
+    "Config": {
+      "type": "Compose",
+      "note": "설정값 모음. 샌드박스→운영 전환 시 이 값만 바꾼다(트리거의 사이트·목록은 직접 다시 선택).",
+      "inputs": {
+        "site": "{{SITE_URL}}",
+        "me": "{{ME}}",
+        "hostWorkbook": "{{HOST_WORKBOOK}}",
+        "scriptFolder": "{{SCRIPT_FOLDER}}",
+        "prototypeMode": true,
+        "channel": "{{NOTIFY_CHANNEL}}",
+        "factoryFolder": "{{FACTORY_FOLDER}}",
+        "links": {
+          "myActions": "{{VIEW_MY_ACTIONS}}",
+          "decisionQueue": "{{VIEW_DECISION_QUEUE}}",
+          "candidates": "{{VIEW_CANDIDATES}}"
+        }
+      },
+      "runAfter": {}
+    },
+    "Today": {
+      "type": "Compose",
+      "inputs": "@{convertFromUtc(utcNow(), 'Korea Standard Time', 'yyyy-MM-dd')}",
+      "note": "오늘(KST)",
+      "runAfter": {
+        "Config": [
+          "Succeeded"
+        ]
+      }
+    },
+    "Since": {
+      "type": "Compose",
+      "inputs": "@{addDays(outputs('Today'), -35, 'yyyy-MM-dd')}",
+      "note": "조회 시작일(35일 전)",
+      "runAfter": {
+        "Today": [
+          "Succeeded"
+        ]
+      }
+    },
+    "Try": {
+      "type": "Scope",
+      "runAfter": {
+        "Since": [
+          "Succeeded"
+        ]
+      },
+      "actions": {
+        "Get_my_actions": {
+          "type": "Connector",
+          "connector": "SharePoint",
+          "operation": "Get items",
+          "inputs": {
+            "site": "@{outputs('Config')?['site']}",
+            "list": "ActionItems",
+            "filter": "Owner/EMail eq '@{outputs('Config')?['me']}' and (Status eq '미착수' or Status eq '진행중' or Modified ge '@{outputs('Since')}')",
+            "top": 2000
+          },
+          "note": "내 미결 + 최근 35일 변경",
+          "runAfter": {}
+        },
+        "Get_decisions": {
+          "type": "Connector",
+          "connector": "SharePoint",
+          "operation": "Get items",
+          "inputs": {
+            "site": "@{outputs('Config')?['site']}",
+            "list": "DecisionLog",
+            "filter": "Status eq '결정요청' or Modified ge '@{outputs('Since')}'",
+            "top": 1000
+          },
+          "note": "결정 대기 + 최근 35일 변경",
+          "runAfter": {
+            "Get_my_actions": [
+              "Succeeded"
+            ]
+          }
+        },
+        "Get_inbox": {
+          "type": "Connector",
+          "connector": "SharePoint",
+          "operation": "Get items",
+          "inputs": {
+            "site": "@{outputs('Config')?['site']}",
+            "list": "FactoryInbox",
+            "filter": "ReceivedAt ge '@{outputs('Since')}'",
+            "top": 2000
+          },
+          "note": "최근 35일 공장 자료 수신",
+          "runAfter": {
+            "Get_decisions": [
+              "Succeeded"
+            ]
+          }
+        },
+        "Run_weekly": {
+          "type": "Connector",
+          "connector": "Excel Online (Business)",
+          "operation": "Run script from SharePoint library",
+          "inputs": {
+            "workbook": "@{outputs('Config')?['hostWorkbook']}",
+            "script": "@{outputs('Config')?['scriptFolder']}/BuildWeeklyDigest.osts",
+            "parameters": {
+              "meEmail": "@{outputs('Config')?['me']}",
+              "todayKst": "@{outputs('Today')}",
+              "actionsJson": "@{string(body('Get_my_actions')?['value'])}",
+              "decisionsJson": "@{string(body('Get_decisions')?['value'])}",
+              "inboxJson": "@{string(body('Get_inbox')?['value'])}"
+            }
+          },
+          "note": "주간 집계·초안 생성(Office Scripts)",
+          "runAfter": {
+            "Get_inbox": [
+              "Succeeded"
+            ]
+          }
+        },
+        "Send_weekly": {
+          "type": "If",
+          "expression": "@equals(outputs('Config')?['channel'], 'teams')",
+          "actions": {
+            "Send_weekly_teams": {
+              "type": "Connector",
+              "connector": "Microsoft Teams",
+              "operation": "Post message in a chat or channel",
+              "inputs": {
+                "poster": "Flow bot",
+                "location": "Chat with Flow bot",
+                "recipient": "@{outputs('Config')?['me']}",
+                "message": "@{body('Run_weekly')?['result']?['htmlSummary']}"
+              },
+              "note": "Teams Flow bot 메시지",
+              "runAfter": {}
+            }
+          },
+          "else": {
+            "actions": {
+              "Send_weekly_email": {
+                "type": "Connector",
+                "connector": "Office 365 Outlook",
+                "operation": "Send an email (V2)",
+                "inputs": {
+                  "to": "@{outputs('Config')?['me']}",
+                  "subject": "@{concat('[주간 정리] ', body('Run_weekly')?['result']?['week'], ' 초안')}",
+                  "body": "@{body('Run_weekly')?['result']?['htmlSummary']}"
+                },
+                "note": "메일 알림(Workflows 앱 없을 때)",
+                "runAfter": {}
+              }
+            }
+          },
+          "note": "본인에게 알림(Teams 메시지 또는 메일) — 설정 channel 이 teams 면 Teams, 아니면 메일",
+          "runAfter": {
+            "Run_weekly": [
+              "Succeeded"
+            ]
+          }
+        }
+      }
+    },
+    "Catch": {
+      "type": "Scope",
+      "runAfter": {
+        "Try": [
+          "Failed",
+          "TimedOut"
+        ]
+      },
+      "actions": {
+        "Failed_actions": {
+          "type": "FilterArray",
+          "note": "Try 안에서 실패한 액션만 추림",
+          "inputs": {
+            "from": "@result('Try')",
+            "where": "@equals(item()?['status'], 'Failed')"
+          },
+          "runAfter": {}
+        },
+        "Log_error": {
+          "type": "Connector",
+          "connector": "SharePoint",
+          "operation": "Create item",
+          "inputs": {
+            "site": "@{outputs('Config')?['site']}",
+            "list": "FlowErrorLog",
+            "item": {
+              "Title": "@{workflow()?['tags']?['flowDisplayName']}",
+              "FlowRunId": "@{workflow()?['run']?['name']}",
+              "FailedAction": "@{coalesce(first(body('Failed_actions'))?['name'], '')}",
+              "ErrorMessage": "@{coalesce(first(body('Failed_actions'))?['error']?['message'], '상세 메시지 없음(실행 기록 확인)')}",
+              "Severity/Value": "Critical",
+              "Resolved": false,
+              "RunUrl": "@{concat('https://make.powerautomate.com/environments/', workflow()?['tags']?['environmentName'], '/flows/', workflow()?['name'], '/runs/', workflow()?['run']?['name'])}"
+            }
+          },
+          "note": "공통 오류 로그 기록",
+          "runAfter": {
+            "Failed_actions": [
+              "Succeeded"
+            ]
+          }
+        },
+        "Terminate_failed": {
+          "type": "Terminate",
+          "inputs": {
+            "runStatus": "Failed",
+            "runError": {
+              "code": "FlowFailed",
+              "message": "@{concat('실패 액션: ', coalesce(first(body('Failed_actions'))?['name'], '?'))}"
+            }
+          },
+          "runAfter": {
+            "Log_error": [
+              "Succeeded",
+              "Failed",
+              "Skipped"
+            ]
+          }
+        }
+      },
+      "note": "실행 후 구성: Try가 '실패함'·'시간 초과됨'일 때"
+    }
+  }
+}

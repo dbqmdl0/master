@@ -1,0 +1,17 @@
+{
+  "skip": false,
+  "reason": "",
+  "targetDate": "2026-10-27",
+  "meetingCount": 1,
+  "meetings": [
+    {
+      "subject": "[가상] 주간 공급 조정",
+      "time": "09:30",
+      "attendeeCount": 2,
+      "overdueActions": 1,
+      "openActions": 1,
+      "pendingDecisions": 0
+    }
+  ],
+  "htmlSummary": "<h3>회의 준비 — 2026-10-27 (회의 1건)</h3><p>참석자 기준으로 미결 할 일·결정 대기를 모았습니다. 회의 시간은 '현황 확인'이 아니라 '결정'에 쓰세요.</p><h4>09:30 [가상] 주간 공급 조정 · 참석 2명</h4><p><b>안건 제안:</b> 기한 초과 1건 원인·새 기한 확정</p><p style=\"color:#b45309\">⚠ 내 주관 회의인데 안건·자료 링크가 없습니다. 오늘 안에 초대에 안건을 붙이세요.</p><ul><li>[할 일] ACT-2026-00002 [가상] 이월 수량 안내 — doyun.park@example.com, 기한 2026-10-23 <b style=\"color:#b91c1c\">(4일 초과)</b></li></ul>"
+}

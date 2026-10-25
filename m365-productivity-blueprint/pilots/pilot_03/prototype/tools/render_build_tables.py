@@ -28,6 +28,7 @@ TRIGGER_UI = {
     "SharePoint.WhenAnItemIsCreated": "SharePoint › **When an item is created** (항목을 만든 경우)",
     "Teams.ForASelectedMessage": "Microsoft Teams › **For a selected message** (선택한 메시지에 대해)",
     "Recurrence": "일정 › **Recurrence(되풀이)**",
+    "Outlook.WhenANewEmailArrivesV3": "Office 365 Outlook › **When a new email arrives (V3)** (새 메일이 도착하면) — 첨부 포함(Include Attachments) **예**, 첨부 있는 메일만(Only with Attachments) **예**",
 }
 FIELD_UI = {"site": "사이트 주소(Site Address) — '사용자 지정 값 입력'", "list": "목록 이름(List Name) — '사용자 지정 값 입력'",
             "filter": "필터 쿼리(Filter Query)", "top": "상위 개수(Top Count)", "id": "ID",
@@ -35,7 +36,8 @@ FIELD_UI = {"site": "사이트 주소(Site Address) — '사용자 지정 값 �
             "card": "Adaptive Card", "message": "메시지(Message)", "workbook": "통합 문서(Workbook) 위치·파일",
             "script": "스크립트(Script) 위치·파일", "user": "사용자(UPN)", "calendarId": "일정 ID(Calendar id)",
             "startTime": "시작 시간(Start Time)", "endTime": "종료 시간(End Time)", "to": "받는 사람(To)",
-            "subject": "제목(Subject)", "body": "본문(Body)"}
+            "subject": "제목(Subject)", "body": "본문(Body) / 파일 콘텐츠(File Content)", "folderPath": "폴더 경로(Folder Path)",
+            "name": "파일 이름(File Name)"}
 
 
 def show(v) -> str:

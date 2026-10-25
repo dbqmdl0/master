@@ -27,7 +27,7 @@ SPECIAL = {"if", "and", "or", "triggerOutputs", "triggerBody", "body", "outputs"
            "result", "workflow", "utcNow", "addDays", "addHours", "addMinutes", "formatDateTime", "convertFromUtc",
            "convertToUtc", "dayOfWeek"}
 PLACEHOLDERS = {"{{SITE_URL}}", "{{ME}}", "{{HOST_WORKBOOK}}", "{{SCRIPT_FOLDER}}", "{{VIEW_MY_ACTIONS}}",
-                "{{VIEW_DECISION_QUEUE}}", "{{VIEW_CANDIDATES}}", "{{NOTIFY_CHANNEL}}"}
+                "{{VIEW_DECISION_QUEUE}}", "{{VIEW_CANDIDATES}}", "{{NOTIFY_CHANNEL}}", "{{FACTORY_FOLDER}}"}
 SYSTEM = {"ID", "Created", "Modified", "Author", "Editor", "{Link}"}
 
 

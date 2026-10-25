@@ -264,6 +264,7 @@ FUNCTIONS = {
     "union": lambda a, b: _union(a, b),
     "formatNumber": _format_number,
     "guid": lambda: str(uuid.uuid4()),
+    "base64ToBinary": lambda s: {"$binary": _string(s)},
 }
 
 

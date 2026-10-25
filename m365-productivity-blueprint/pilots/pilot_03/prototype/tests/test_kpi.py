@@ -33,7 +33,7 @@ def export(env, lst, folder):
 class KpiTest(unittest.TestCase):
     def test_model_totals(self):
         m = kpi_report.model(write=False)
-        self.assertEqual((m["base"], m["net"], m["conditional"]), (118.7, 108.7, 60.0))
+        self.assertEqual((m["base"], m["net"], m["conditional"]), (196.8, 181.8, 44.0))
 
     def test_report_from_emulated_month(self):
         e = Env()

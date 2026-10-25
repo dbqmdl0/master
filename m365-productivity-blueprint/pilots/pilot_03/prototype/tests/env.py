@@ -8,7 +8,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "emulator"))
-from fakes import Faults, FakeExcel, FakeOutlook, FakeSharePoint, FakeTeams, FakeUsers  # noqa: E402
+from fakes import Faults, FakeExcel, FakeOneDrive, FakeOutlook, FakeSharePoint, FakeTeams, FakeUsers  # noqa: E402
 from runtime import Flow, Runtime  # noqa: E402
 
 SITE = "https://contoso-my.sharepoint.com/personal/seoyeon_han_example_com"
@@ -20,7 +20,8 @@ DIRECTORY = {ME: "한서연", "doyun.park@example.com": "박도윤", "minjae.lee
 SITE_MAP = {"{{SITE_URL}}": SITE, "{{ME}}": ME, "{{HOST_WORKBOOK}}": HOST, "{{SCRIPT_FOLDER}}": SCRIPTS,
             "{{VIEW_MY_ACTIONS}}": f"{SITE}/Lists/ActionItems/my.aspx",
             "{{VIEW_DECISION_QUEUE}}": f"{SITE}/Lists/DecisionLog/queue.aspx",
-            "{{VIEW_CANDIDATES}}": f"{SITE}/Lists/ActionCandidates/pending.aspx", "{{NOTIFY_CHANNEL}}": "teams"}
+            "{{VIEW_CANDIDATES}}": f"{SITE}/Lists/ActionCandidates/pending.aspx", "{{NOTIFY_CHANNEL}}": "teams",
+            "{{FACTORY_FOLDER}}": "/SCM_수신"}
 KST = timezone(timedelta(hours=9))
 
 
@@ -49,11 +50,13 @@ class Env:
         self.outlook = FakeOutlook(self.faults)
         self.teams = FakeTeams(self.faults, DIRECTORY)
         self.excel = FakeExcel(self.faults)
-        for name in ("BuildDailyBrief", "BuildReminderDigest", "GuardExtraction"):
+        for name in ("BuildDailyBrief", "BuildReminderDigest", "GuardExtraction", "ParseDueHint", "BuildMeetingPrep",
+                     "BuildWeeklyDigest"):
             self.excel.add_file(f"{SCRIPTS}/{name}.osts", [ME])
         self.excel.add_file(HOST, [ME])
         self.users = FakeUsers(self.faults, DIRECTORY)
-        self.rt = Runtime(self.sp, self.outlook, self.teams, self.excel, self.users, self.clock)
+        self.onedrive = FakeOneDrive(self.faults)
+        self.rt = Runtime(self.sp, self.outlook, self.teams, self.excel, self.users, self.clock, self.onedrive)
         paths = flow_paths or sorted((ROOT / "flows").glob("*.flow.json"))
         for p in paths:
             fl = Flow(Path(p), ME, {**SITE_MAP, "{{NOTIFY_CHANNEL}}": channel})
@@ -94,6 +97,15 @@ class Env:
             runs = self.rt.fire("Outlook.WhenAnEmailIsFlaggedV4", out, fid)
         self.rt.drain()
         return runs
+
+    def new_email(self, msg_id, sender, subject="[PLT-A] 주간 생산실적", attachments=None, received="2026-10-26T01:10:00Z"):
+        """받은 편지함에 첨부 메일 도착(When a new email arrives (V3), 첨부 포함)."""
+        body = {"id": msg_id, "from": sender, "subject": subject, "receivedDateTime": received, "hasAttachments": True,
+                "attachments": [{"name": n, "contentBytes": "UEsDBAoAAAAAAA==", "contentType": "application/octet-stream"}
+                                for n in (attachments or [])]}
+        runs = self.rt.fire("Outlook.WhenANewEmailArrivesV3", {"body": body, "_folder": "Inbox"}, "P3P-F10")
+        self.rt.drain()
+        return runs[0]
 
     def select_message(self, msg_id, content, kind="액션", title="", owner="", due="", decision_id=""):
         out = {"body": {"cardOutputs": {"kind": kind, "title": title, "ownerEmail": owner, "dueDate": due,

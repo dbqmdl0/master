@@ -32,6 +32,7 @@
 | `{{VIEW_DECISION_QUEUE}}` | DecisionLog '결정 대기열' 보기 URL | 〃 |
 | `{{VIEW_CANDIDATES}}` | ActionCandidates '확인 대기' 보기 URL | 〃 |
 | `{{NOTIFY_CHANNEL}}` | **`email`** (2026-10-26 점검: Workflows 앱 없음) | Workflows 앱이 허용되면 `teams` |
+| `{{FACTORY_FOLDER}}` | `/SCM_수신` | 추가 기능 F10의 OneDrive 저장 기본 폴더 |
 
 `prototypeMode: true` — 리마인더를 본인에게만 보낸다. **운영 전환 승인(APPROVALS U-04) 전까지 false로 바꾸지 않는다.**
 
@@ -116,6 +117,7 @@ CSV에서 텍스트로 들어왔다면: 그 열 삭제 → **+ 열 추가(Add co
 | 6 | P3P-F6 아침 브리핑 | 예약(평일 07:40, Seoul) | `Catch` 안의 `If_teams_failed` → 본인 메일 대체 |
 | 7 | P3P-F7 리마인더 | 예약(평일 08:30, Seoul) | 최상위 `Init_skipped` 변수 초기화는 **Try 밖(위)** 에. `For_each_digest` 동시성 1 |
 | 8 | P3P-F8 Copilot 추출 검증 | 자동화(MeetingIntake 생성·수정) | 트리거 조건(접수·재검증요청일 때만) |
+| 10~13 | 🆕 P3P-F10 공장 자료 저장 · F13 기한 추정 · F12 주간 정리 · F11 회의 준비 | START_HERE '추가 기능' 절 | F10 트리거 고급 옵션(첨부 포함·첨부 있는 메일만), F13 트리거 조건 |
 | 9 | P3P-F9 승인 후보 등록 | 자동화(ActionCandidates 생성·수정) | 트리거 조건 + **동시성 1** + 첫 액션 `Recheck`(최신 값 재확인) |
 
 ### 4.3 첫 실행에서 반드시 확인할 '추정 필드' (공식 스키마 미확인 → 출력으로 확정)

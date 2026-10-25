@@ -87,6 +87,20 @@ class Mutations(unittest.TestCase):
         self.assertIn("L6", errs)
         self.assertIn("L4", errs)
 
+    def test_removing_factory_dedupe_saves_twice(self):
+        def drop(d):
+            t = d["actions"]["Try"]["actions"]
+            t["If_duplicate"]["expression"] = "@equals(1, 2)"
+        paths, _ = mutated("P3P-F10", drop)
+        e = Env(flow_paths=paths, channel="email")
+        site = e.rt.flows[0].d["actions"]["Config"]["inputs"]["site"]
+        e.sp.create(ME, site, "FactorySenders", {"Title": "A", "PlantCode": "PLT-A", "SenderPattern": "@plta.example.com"})
+        e.sp.events.clear()
+        e.new_email("dup-1", "kim@plta.example.com", attachments=["a.xlsx"])
+        r = e.new_email("dup-1", "kim@plta.example.com", attachments=["a.xlsx"])
+        self.assertEqual(r.status, "Failed")  # 같은 파일 이름 충돌(409)로 실패 → 중복 방지 단계가 필요함을 입증
+        self.assertEqual(len(e.items("FactoryInbox")), 1)
+
     def test_lint_passes_all_real_flows(self):
         self.assertEqual(lint_flows.main(), 0)
 

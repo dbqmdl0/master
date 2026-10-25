@@ -1,0 +1,205 @@
+{
+  "id": "P3P-F13",
+  "name": "P3P-F13 메일 문구로 기한 자동 제안",
+  "purpose": "플래그로 등록된 할 일에 기한이 없으면 메일 제목·미리보기의 '내일까지·10/30까지·금요일까지·긴급' 같은 표현으로 기한·우선순위를 채우고 근거를 남김.",
+  "trigger": {
+    "kind": "SharePoint.WhenAnItemIsCreatedOrModified",
+    "inputs": {
+      "site": "{{SITE_URL}}",
+      "list": "ActionItems"
+    },
+    "conditions": [
+      "@and(empty(triggerOutputs()?['body/DueDate']), empty(triggerOutputs()?['body/DueHintChecked']), equals(triggerOutputs()?['body/CreatedVia/Value'], 'Outlook 플래그'))"
+    ]
+  },
+  "actions": {
+    "Config": {
+      "type": "Compose",
+      "note": "설정값 모음. 샌드박스→운영 전환 시 이 값만 바꾼다(트리거의 사이트·목록은 직접 다시 선택).",
+      "inputs": {
+        "site": "{{SITE_URL}}",
+        "me": "{{ME}}",
+        "hostWorkbook": "{{HOST_WORKBOOK}}",
+        "scriptFolder": "{{SCRIPT_FOLDER}}",
+        "prototypeMode": true,
+        "channel": "{{NOTIFY_CHANNEL}}",
+        "factoryFolder": "{{FACTORY_FOLDER}}",
+        "links": {
+          "myActions": "{{VIEW_MY_ACTIONS}}",
+          "decisionQueue": "{{VIEW_DECISION_QUEUE}}",
+          "candidates": "{{VIEW_CANDIDATES}}"
+        }
+      },
+      "runAfter": {}
+    },
+    "Try": {
+      "type": "Scope",
+      "runAfter": {
+        "Config": [
+          "Succeeded"
+        ]
+      },
+      "actions": {
+        "Recheck": {
+          "type": "Connector",
+          "connector": "SharePoint",
+          "operation": "Get item",
+          "inputs": {
+            "site": "@{outputs('Config')?['site']}",
+            "list": "ActionItems",
+            "id": "@triggerOutputs()?['body/ID']"
+          },
+          "note": "최신 값 재확인(중복 실행 방어)",
+          "runAfter": {}
+        },
+        "If_already": {
+          "type": "If",
+          "expression": "@not(and(empty(body('Recheck')?['DueDate']), empty(body('Recheck')?['DueHintChecked'])))",
+          "actions": {
+            "Stop_already": {
+              "type": "Terminate",
+              "inputs": {
+                "runStatus": "Succeeded",
+                "runError": {
+                  "code": "AlreadyHandled",
+                  "message": "이미 기한이 있거나 추정 완료"
+                }
+              },
+              "runAfter": {}
+            }
+          },
+          "note": "",
+          "runAfter": {
+            "Recheck": [
+              "Succeeded"
+            ]
+          }
+        },
+        "Get_holidays": {
+          "type": "Connector",
+          "connector": "SharePoint",
+          "operation": "Get items",
+          "inputs": {
+            "site": "@{outputs('Config')?['site']}",
+            "list": "Holidays",
+            "top": 500
+          },
+          "note": "휴무일(내일·모레 계산용)",
+          "runAfter": {
+            "If_already": [
+              "Succeeded"
+            ]
+          }
+        },
+        "Run_hint": {
+          "type": "Connector",
+          "connector": "Excel Online (Business)",
+          "operation": "Run script from SharePoint library",
+          "inputs": {
+            "workbook": "@{outputs('Config')?['hostWorkbook']}",
+            "script": "@{outputs('Config')?['scriptFolder']}/ParseDueHint.osts",
+            "parameters": {
+              "text": "@{concat(body('Recheck')?['Title'], ' ', coalesce(body('Recheck')?['Evidence'], ''))}",
+              "receivedKst": "@{convertFromUtc(body('Recheck')?['Created'], 'Korea Standard Time', 'yyyy-MM-dd')}",
+              "holidaysJson": "@{string(body('Get_holidays')?['value'])}"
+            }
+          },
+          "note": "기한·긴급도 추정(Office Scripts)",
+          "runAfter": {
+            "Get_holidays": [
+              "Succeeded"
+            ]
+          }
+        },
+        "Update_hint": {
+          "type": "Connector",
+          "connector": "SharePoint",
+          "operation": "Update item",
+          "inputs": {
+            "site": "@{outputs('Config')?['site']}",
+            "list": "ActionItems",
+            "id": "@triggerOutputs()?['body/ID']",
+            "item": {
+              "Title": "@{body('Recheck')?['Title']}",
+              "Owner/Claims": "@{body('Recheck')?['Owner']?['Claims']}",
+              "Status/Value": "@{body('Recheck')?['Status']?['Value']}",
+              "ActionType/Value": "@{body('Recheck')?['ActionType']?['Value']}",
+              "DueDate": "@if(empty(body('Run_hint')?['result']?['dueDate']), null, body('Run_hint')?['result']?['dueDate'])",
+              "Priority/Value": "@{if(equals(body('Run_hint')?['result']?['priority'], '높음'), '높음', coalesce(body('Recheck')?['Priority']?['Value'], '보통'))}",
+              "DueHint": "@{if(empty(body('Run_hint')?['result']?['phrase']), '근거 없음 — 직접 입력', concat('메일 문구 [', body('Run_hint')?['result']?['phrase'], ']에서 추정'))}",
+              "DueHintChecked": "Y"
+            }
+          },
+          "note": "기한·우선순위·근거 기록(사람이 언제든 수정 가능)",
+          "runAfter": {
+            "Run_hint": [
+              "Succeeded"
+            ]
+          }
+        }
+      }
+    },
+    "Catch": {
+      "type": "Scope",
+      "runAfter": {
+        "Try": [
+          "Failed",
+          "TimedOut"
+        ]
+      },
+      "actions": {
+        "Failed_actions": {
+          "type": "FilterArray",
+          "note": "Try 안에서 실패한 액션만 추림",
+          "inputs": {
+            "from": "@result('Try')",
+            "where": "@equals(item()?['status'], 'Failed')"
+          },
+          "runAfter": {}
+        },
+        "Log_error": {
+          "type": "Connector",
+          "connector": "SharePoint",
+          "operation": "Create item",
+          "inputs": {
+            "site": "@{outputs('Config')?['site']}",
+            "list": "FlowErrorLog",
+            "item": {
+              "Title": "@{workflow()?['tags']?['flowDisplayName']}",
+              "FlowRunId": "@{workflow()?['run']?['name']}",
+              "FailedAction": "@{coalesce(first(body('Failed_actions'))?['name'], '')}",
+              "ErrorMessage": "@{coalesce(first(body('Failed_actions'))?['error']?['message'], '상세 메시지 없음(실행 기록 확인)')}",
+              "Severity/Value": "Critical",
+              "Resolved": false,
+              "RunUrl": "@{concat('https://make.powerautomate.com/environments/', workflow()?['tags']?['environmentName'], '/flows/', workflow()?['name'], '/runs/', workflow()?['run']?['name'])}"
+            }
+          },
+          "note": "공통 오류 로그 기록",
+          "runAfter": {
+            "Failed_actions": [
+              "Succeeded"
+            ]
+          }
+        },
+        "Terminate_failed": {
+          "type": "Terminate",
+          "inputs": {
+            "runStatus": "Failed",
+            "runError": {
+              "code": "FlowFailed",
+              "message": "@{concat('실패 액션: ', coalesce(first(body('Failed_actions'))?['name'], '?'))}"
+            }
+          },
+          "runAfter": {
+            "Log_error": [
+              "Succeeded",
+              "Failed",
+              "Skipped"
+            ]
+          }
+        }
+      },
+      "note": "실행 후 구성: Try가 '실패함'·'시간 초과됨'일 때"
+    }
+  }
+}

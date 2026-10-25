@@ -18,7 +18,7 @@
 
 | 단계 | 액션 이름(이름 바꾸기) | 추가할 액션 | 설정값 | 비고 |
 |---|---|---|---|---|
-| 1 | `Config` | 데이터 작업 › **작성(Compose)** | 입력(Inputs): `{"site": "{{SITE_URL}}", "me": "{{ME}}", "hostWorkbook": "{{HOST_WORKBOOK}}", "scriptFolder": "{{SCRIPT_FOLDER}}", "prototypeMode": true, "channel": "{{NOTIFY_CHANNEL}}", "links": {"myActions": "{{VIEW_MY_ACTIONS}}", "decisionQueue": "{{VIEW_DECISION_QUEUE}}", "candidates": "{{VIEW_CANDIDATES}}"}}` | 설정값 모음. 샌드박스→운영 전환 시 이 값만 바꾼다(트리거의 사이트·목록은 직접 다시 선택). |
+| 1 | `Config` | 데이터 작업 › **작성(Compose)** | 입력(Inputs): `{"site": "{{SITE_URL}}", "me": "{{ME}}", "hostWorkbook": "{{HOST_WORKBOOK}}", "scriptFolder": "{{SCRIPT_FOLDER}}", "prototypeMode": true, "channel": "{{NOTIFY_CHANNEL}}", "factoryFolder": "{{FACTORY_FOLDER}}", "links": {"myActions": "{{VIEW_MY_ACTIONS}}", "decisionQueue": "{{VIEW_DECISION_QUEUE}}", "candidates": "{{VIEW_CANDIDATES}}"}}` | 설정값 모음. 샌드박스→운영 전환 시 이 값만 바꾼다(트리거의 사이트·목록은 직접 다시 선택). |
 | 2 | `Try` | 컨트롤 › **범위(Scope)** | - |  |
 | 2.1 | 　`Check_message_id` | 컨트롤 › **조건(Condition)** | 왼쪽 값: **fx** `empty(triggerOutputs()?['body/id'])` · 연산자 **같음(is equal to)** · 오른쪽 값: **fx** `true` | 메일 ID 누락 방어 |
 | 2.1.예 | 　　**'True(예)' 분기** | | | |
@@ -40,6 +40,135 @@
 | 3.2 | 　`Log_error` | SharePoint › **Create item** | 사이트 주소(Site Address) — '사용자 지정 값 입력': `@{outputs('Config')?['site']}`<br>목록 이름(List Name) — '사용자 지정 값 입력': `FlowErrorLog`<br>Flow 이름 `Title`: `@{workflow()?['tags']?['flowDisplayName']}`<br>실행 ID `FlowRunId`: `@{workflow()?['run']?['name']}`<br>실패 액션 `FailedAction`: `@{coalesce(first(body('Failed_actions'))?['name'], '')}`<br>오류 메시지 `ErrorMessage`: `@{coalesce(first(body('Failed_actions'))?['error']?['message'], '상세 메시지 없음(실행 기록 확인)')}`<br>심각도 `Severity` (선택 값): `Critical`<br>조치완료 `Resolved`: `false`(식 탭)<br>실행 기록 링크 `RunUrl`: `@{concat('https://make.powerautomate.com/environments/', workflow()?['tags']?['environmentName'], '/flows/', workflow()?['name'], '/runs/', workflow()?['run']?['name'])}` | 공통 오류 로그 기록 |
 | 3.3 | 　`Terminate_failed` | 컨트롤 › **종료(Terminate)** | 상태: 실패함(Failed) · 코드 `FlowFailed` · 메시지 `@{concat('실패 액션: ', coalesce(first(body('Failed_actions'))?['name'], '?'))}`<br>**실행 후 구성**: 'Log_error' 이(가) 성공함, 실패함, 건너뜀 |  |
 
+## P3P-F10 공장 자료 메일 → 첨부 자동 저장·수신 대장
+
+**목적:** 공장 발신자(FactorySenders)의 첨부 메일이 오면 Excel·CSV 첨부를 OneDrive '공장코드/날짜' 폴더에 자동 저장하고 수신 대장에 기록. 다운로드·이름 바꾸기·폴더 정리·수신 확인 제거, 수신 패턴 자동 축적.
+
+**만들기:** 자동화된 클라우드 흐름 · 흐름 이름 `P3P-F10 공장 자료 메일 → 첨부 자동 저장·수신 대장`
+
+**트리거:** Office 365 Outlook › **When a new email arrives (V3)** (새 메일이 도착하면) — 첨부 포함(Include Attachments) **예**, 첨부 있는 메일만(Only with Attachments) **예**
+
+- 폴더(Folder): `Inbox`
+- 트리거 **설정 › 동시성 제어(Concurrency control) 켬 › 병렬 처리 수준 1** (한 번 켜면 되돌리려면 트리거를 다시 만들어야 함)
+
+| 단계 | 액션 이름(이름 바꾸기) | 추가할 액션 | 설정값 | 비고 |
+|---|---|---|---|---|
+| 1 | `Config` | 데이터 작업 › **작성(Compose)** | 입력(Inputs): `{"site": "{{SITE_URL}}", "me": "{{ME}}", "hostWorkbook": "{{HOST_WORKBOOK}}", "scriptFolder": "{{SCRIPT_FOLDER}}", "prototypeMode": true, "channel": "{{NOTIFY_CHANNEL}}", "factoryFolder": "{{FACTORY_FOLDER}}", "links": {"myActions": "{{VIEW_MY_ACTIONS}}", "decisionQueue": "{{VIEW_DECISION_QUEUE}}", "candidates": "{{VIEW_CANDIDATES}}"}}` | 설정값 모음. 샌드박스→운영 전환 시 이 값만 바꾼다(트리거의 사이트·목록은 직접 다시 선택). |
+| 2 | `Try` | 컨트롤 › **범위(Scope)** | - |  |
+| 2.1 | 　`Get_senders` | SharePoint › **Get items** | 사이트 주소(Site Address) — '사용자 지정 값 입력': `@{outputs('Config')?['site']}`<br>목록 이름(List Name) — '사용자 지정 값 입력': `FactorySenders`<br>상위 개수(Top Count): `500` | 공장 발신자 설정 |
+| 2.2 | 　`Match_sender` | 데이터 작업 › **배열 필터링(Filter array)** | 보낸 사람(From): **fx** `body('Get_senders')?['value']` · '고급 모드에서 편집' 후: `@contains(toLower(coalesce(triggerOutputs()?['body/from'], '')), toLower(item()?['SenderPattern']))` | 발신자가 공장 발신자 목록에 있는지 |
+| 2.3 | 　`If_not_factory` | 컨트롤 › **조건(Condition)** | 왼쪽 값: **fx** `equals(length(body('Match_sender')), 0)` · 연산자 **같음(is equal to)** · 오른쪽 값: **fx** `true` | 공장 메일이 아니면 즉시 종료(대부분의 메일은 여기서 끝) |
+| 2.3.예 | 　　**'True(예)' 분기** | | | |
+| 2.3.예.1 | 　　`Stop_not_factory` | 컨트롤 › **종료(Terminate)** | 상태: 성공함(Succeeded) |  |
+| 2.4 | 　`Find_existing` | SharePoint › **Get items** | 사이트 주소(Site Address) — '사용자 지정 값 입력': `@{outputs('Config')?['site']}`<br>목록 이름(List Name) — '사용자 지정 값 입력': `FactoryInbox`<br>필터 쿼리(Filter Query): `SourceMessageId eq '@{replace(triggerOutputs()?['body/id'], '''', '''''')}'`<br>상위 개수(Top Count): `1` | 같은 메일 중복 저장 방지 |
+| 2.5 | 　`If_duplicate` | 컨트롤 › **조건(Condition)** | 왼쪽 값: **fx** `greater(length(body('Find_existing')?['value']), 0)` · 연산자 **같음(is equal to)** · 오른쪽 값: **fx** `true` |  |
+| 2.5.예 | 　　**'True(예)' 분기** | | | |
+| 2.5.예.1 | 　　`Stop_duplicate` | 컨트롤 › **종료(Terminate)** | 상태: 성공함(Succeeded) |  |
+| 2.6 | 　`Excel_files` | 데이터 작업 › **배열 필터링(Filter array)** | 보낸 사람(From): **fx** `coalesce(triggerOutputs()?['body/attachments'], createArray())` · '고급 모드에서 편집' 후: `@or(endsWith(item()?['name'], '.xlsx'), endsWith(item()?['name'], '.xlsm'), endsWith(item()?['name'], '.xls'), endsWith(item()?['name'], '.csv'))` | Excel·CSV 첨부만 저장 |
+| 2.7 | 　`If_no_excel` | 컨트롤 › **조건(Condition)** | 왼쪽 값: **fx** `equals(length(body('Excel_files')), 0)` · 연산자 **같음(is equal to)** · 오른쪽 값: **fx** `true` |  |
+| 2.7.예 | 　　**'True(예)' 분기** | | | |
+| 2.7.예.1 | 　　`Stop_no_excel` | 컨트롤 › **종료(Terminate)** | 상태: 성공함(Succeeded) |  |
+| 2.8 | 　`Folder` | 데이터 작업 › **작성(Compose)** | 입력(Inputs): `@{concat(outputs('Config')?['factoryFolder'], '/', first(body('Match_sender'))?['PlantCode'], '/', convertFromUtc(triggerOutputs()?['body/receivedDateTime'], 'Korea Standard Time', 'yyyy-MM-dd'))}` | 저장 폴더: 기본 폴더/공장코드/수신일(KST) |
+| 2.9 | 　`Save_files` | 컨트롤 › **각각에 적용(Apply to each)** | 이전 단계에서 출력 선택: **fx** `body('Excel_files')` · 설정 › 동시성 제어 **켬, 병렬 처리 수준 1** | 첨부마다 저장(파일 이름 앞에 수신 시각) |
+| 2.9.1 | 　　`Create_file` | OneDrive for Business › **Create file** | 폴더 경로(Folder Path): `@{outputs('Folder')}`<br>파일 이름(File Name): `@{concat(convertFromUtc(triggerOutputs()?['body/receivedDateTime'], 'Korea Standard Time', 'HHmm'), '_', items('Save_files')?['name'])}`<br>본문(Body) / 파일 콘텐츠(File Content): **fx** `base64ToBinary(items('Save_files')?['contentBytes'])` | OneDrive에 저장 |
+| 2.10 | 　`File_names` | 데이터 작업 › **선택(Select)** | - | 저장한 파일 이름 목록 |
+| 2.11 | 　`Log_inbox` | SharePoint › **Create item** | 사이트 주소(Site Address) — '사용자 지정 값 입력': `@{outputs('Config')?['site']}`<br>목록 이름(List Name) — '사용자 지정 값 입력': `FactoryInbox`<br>메일 제목 `Title`: `@{if(empty(triggerOutputs()?['body/subject']), '(제목 없음)', if(greater(length(triggerOutputs()?['body/subject']), 250), substring(triggerOutputs()?['body/subject'], 0, 250), triggerOutputs()?['body/subject']))}`<br>공장코드 `PlantCode`: `@{first(body('Match_sender'))?['PlantCode']}`<br>발신자 `Sender`: `@{coalesce(triggerOutputs()?['body/from'], '')}`<br>수신 시각 `ReceivedAt`: `@{triggerOutputs()?['body/receivedDateTime']}`<br>저장 파일 수 `FileCount`: **fx** `length(body('Excel_files'))`<br>파일 이름 `FileNames`: `@{join(body('File_names'), ', ')}`<br>저장 폴더 `SavedFolder`: `@{outputs('Folder')}`<br>원본 메시지 ID(시스템) `SourceMessageId`: `@{triggerOutputs()?['body/id']}` | 수신 대장 기록 |
+| 3 | `Catch` | 컨트롤 › **범위(Scope)** | **실행 후 구성**: 'Try' 이(가) 실패함, 시간 초과됨 | 실행 후 구성: Try가 '실패함'·'시간 초과됨'일 때 |
+| 3.1 | 　`Failed_actions` | 데이터 작업 › **배열 필터링(Filter array)** | 보낸 사람(From): **fx** `result('Try')` · '고급 모드에서 편집' 후: `@equals(item()?['status'], 'Failed')` | Try 안에서 실패한 액션만 추림 |
+| 3.2 | 　`Log_error` | SharePoint › **Create item** | 사이트 주소(Site Address) — '사용자 지정 값 입력': `@{outputs('Config')?['site']}`<br>목록 이름(List Name) — '사용자 지정 값 입력': `FlowErrorLog`<br>Flow 이름 `Title`: `@{workflow()?['tags']?['flowDisplayName']}`<br>실행 ID `FlowRunId`: `@{workflow()?['run']?['name']}`<br>실패 액션 `FailedAction`: `@{coalesce(first(body('Failed_actions'))?['name'], '')}`<br>오류 메시지 `ErrorMessage`: `@{coalesce(first(body('Failed_actions'))?['error']?['message'], '상세 메시지 없음(실행 기록 확인)')}`<br>심각도 `Severity` (선택 값): `Critical`<br>조치완료 `Resolved`: `false`(식 탭)<br>실행 기록 링크 `RunUrl`: `@{concat('https://make.powerautomate.com/environments/', workflow()?['tags']?['environmentName'], '/flows/', workflow()?['name'], '/runs/', workflow()?['run']?['name'])}` | 공통 오류 로그 기록 |
+| 3.3 | 　`Terminate_failed` | 컨트롤 › **종료(Terminate)** | 상태: 실패함(Failed) · 코드 `FlowFailed` · 메시지 `@{concat('실패 액션: ', coalesce(first(body('Failed_actions'))?['name'], '?'))}`<br>**실행 후 구성**: 'Log_error' 이(가) 성공함, 실패함, 건너뜀 |  |
+
+## P3P-F11 다음 영업일 회의 준비 메일
+
+**목적:** 평일 16:30, 다음 영업일 회의마다 참석자의 미결 할 일·결정 대기·최근 결정과 안건 제안을 본인에게 메일 1통으로.
+
+**만들기:** 예약된 클라우드 흐름 · 흐름 이름 `P3P-F11 다음 영업일 회의 준비 메일`
+
+**트리거:** 일정 › **Recurrence(되풀이)**
+
+- 간격 1 / 빈도 **주(Week)** · 표준 시간대 **(UTC+09:00) Seoul** · 요일 월~금 · 시간 16 · 분 30
+
+| 단계 | 액션 이름(이름 바꾸기) | 추가할 액션 | 설정값 | 비고 |
+|---|---|---|---|---|
+| 1 | `Config` | 데이터 작업 › **작성(Compose)** | 입력(Inputs): `{"site": "{{SITE_URL}}", "me": "{{ME}}", "hostWorkbook": "{{HOST_WORKBOOK}}", "scriptFolder": "{{SCRIPT_FOLDER}}", "prototypeMode": true, "channel": "{{NOTIFY_CHANNEL}}", "factoryFolder": "{{FACTORY_FOLDER}}", "links": {"myActions": "{{VIEW_MY_ACTIONS}}", "decisionQueue": "{{VIEW_DECISION_QUEUE}}", "candidates": "{{VIEW_CANDIDATES}}"}}` | 설정값 모음. 샌드박스→운영 전환 시 이 값만 바꾼다(트리거의 사이트·목록은 직접 다시 선택). |
+| 2 | `Today` | 데이터 작업 › **작성(Compose)** | 입력(Inputs): `@{convertFromUtc(utcNow(), 'Korea Standard Time', 'yyyy-MM-dd')}` | 오늘(KST) |
+| 3 | `DayStartUtc` | 데이터 작업 › **작성(Compose)** | 입력(Inputs): `@{convertToUtc(concat(outputs('Today'), 'T00:00:00'), 'Korea Standard Time')}` | 오늘 0시(KST)를 UTC로 |
+| 4 | `Try` | 컨트롤 › **범위(Scope)** | - |  |
+| 4.1 | 　`Get_holidays` | SharePoint › **Get items** | 사이트 주소(Site Address) — '사용자 지정 값 입력': `@{outputs('Config')?['site']}`<br>목록 이름(List Name) — '사용자 지정 값 입력': `Holidays`<br>상위 개수(Top Count): `500` | 휴무일 |
+| 4.2 | 　`Get_events` | Office 365 Outlook › **Get calendar view of events (V3)** | 일정 ID(Calendar id): `Calendar`<br>시작 시간(Start Time): `@{addDays(outputs('DayStartUtc'), 1)}`<br>종료 시간(End Time): `@{addDays(outputs('DayStartUtc'), 5)}` | 내일~4일 뒤 일정(주말·휴무 건너 다음 영업일을 스크립트가 고름) |
+| 4.3 | 　`Get_open_actions` | SharePoint › **Get items** | 사이트 주소(Site Address) — '사용자 지정 값 입력': `@{outputs('Config')?['site']}`<br>목록 이름(List Name) — '사용자 지정 값 입력': `ActionItems`<br>필터 쿼리(Filter Query): `Status eq '미착수' or Status eq '진행중'`<br>상위 개수(Top Count): `2000` | 미결 할 일(전체 담당자) |
+| 4.4 | 　`Get_decisions` | SharePoint › **Get items** | 사이트 주소(Site Address) — '사용자 지정 값 입력': `@{outputs('Config')?['site']}`<br>목록 이름(List Name) — '사용자 지정 값 입력': `DecisionLog`<br>필터 쿼리(Filter Query): `Status eq '결정요청' or (Status eq '확정' and DecidedAt ge '@{addDays(outputs('Today'), -14, 'yyyy-MM-dd')}')`<br>상위 개수(Top Count): `1000` | 결정 대기 + 최근 14일 확정 |
+| 4.5 | 　`Run_prep` | Excel Online (Business) › **Run script from SharePoint library** | 통합 문서(Workbook) 위치·파일: `@{outputs('Config')?['hostWorkbook']}`<br>스크립트(Script) 위치·파일: `@{outputs('Config')?['scriptFolder']}/BuildMeetingPrep.osts`<br>매개변수 `meEmail`: `@{outputs('Config')?['me']}`<br>매개변수 `todayKst`: `@{outputs('Today')}`<br>매개변수 `eventsJson`: `@{string(body('Get_events')?['value'])}`<br>매개변수 `actionsJson`: `@{string(body('Get_open_actions')?['value'])}`<br>매개변수 `decisionsJson`: `@{string(body('Get_decisions')?['value'])}`<br>매개변수 `holidaysJson`: `@{string(body('Get_holidays')?['value'])}` | 회의별 참석자 기준 자료 정리(Office Scripts) |
+| 4.6 | 　`If_skip` | 컨트롤 › **조건(Condition)** | 왼쪽 값: **fx** `equals(body('Run_prep')?['result']?['skip'], true)` · 연산자 **같음(is equal to)** · 오른쪽 값: **fx** `true` | 회의가 없거나 휴무일이면 보내지 않음 |
+| 4.6.예 | 　　**'True(예)' 분기** | | | |
+| 4.6.예.1 | 　　`Stop_skip` | 컨트롤 › **종료(Terminate)** | 상태: 성공함(Succeeded) |  |
+| 4.7 | 　`Send_prep` | 컨트롤 › **조건(Condition)** | 왼쪽 값: **fx** `equals(outputs('Config')?['channel'], 'teams')` · 연산자 **같음(is equal to)** · 오른쪽 값: **fx** `true` | 본인에게 알림(Teams 메시지 또는 메일) — 설정 channel 이 teams 면 Teams, 아니면 메일 |
+| 4.7.예 | 　　**'True(예)' 분기** | | | |
+| 4.7.예.1 | 　　`Send_prep_teams` | Microsoft Teams › **Post message in a chat or channel** | 게시자(Post as): `Flow bot`<br>게시 위치(Post in): `Chat with Flow bot`<br>받는 사람(Recipient): `@{outputs('Config')?['me']}`<br>메시지(Message): `@{body('Run_prep')?['result']?['htmlSummary']}` | Teams Flow bot 메시지 |
+| 4.7.아니요 | 　　**'False(아니요)' 분기** | | | |
+| 4.7.아니요.1 | 　　`Send_prep_email` | Office 365 Outlook › **Send an email (V2)** | 받는 사람(To): `@{outputs('Config')?['me']}`<br>제목(Subject): `@{concat('[회의 준비] ', body('Run_prep')?['result']?['targetDate'], ' · ', string(body('Run_prep')?['result']?['meetingCount']), '건')}`<br>본문(Body) / 파일 콘텐츠(File Content): `@{body('Run_prep')?['result']?['htmlSummary']}` | 메일 알림(Workflows 앱 없을 때) |
+| 5 | `Catch` | 컨트롤 › **범위(Scope)** | **실행 후 구성**: 'Try' 이(가) 실패함, 시간 초과됨 | 실행 후 구성: Try가 '실패함'·'시간 초과됨'일 때 |
+| 5.1 | 　`Failed_actions` | 데이터 작업 › **배열 필터링(Filter array)** | 보낸 사람(From): **fx** `result('Try')` · '고급 모드에서 편집' 후: `@equals(item()?['status'], 'Failed')` | Try 안에서 실패한 액션만 추림 |
+| 5.2 | 　`Log_error` | SharePoint › **Create item** | 사이트 주소(Site Address) — '사용자 지정 값 입력': `@{outputs('Config')?['site']}`<br>목록 이름(List Name) — '사용자 지정 값 입력': `FlowErrorLog`<br>Flow 이름 `Title`: `@{workflow()?['tags']?['flowDisplayName']}`<br>실행 ID `FlowRunId`: `@{workflow()?['run']?['name']}`<br>실패 액션 `FailedAction`: `@{coalesce(first(body('Failed_actions'))?['name'], '')}`<br>오류 메시지 `ErrorMessage`: `@{coalesce(first(body('Failed_actions'))?['error']?['message'], '상세 메시지 없음(실행 기록 확인)')}`<br>심각도 `Severity` (선택 값): `Critical`<br>조치완료 `Resolved`: `false`(식 탭)<br>실행 기록 링크 `RunUrl`: `@{concat('https://make.powerautomate.com/environments/', workflow()?['tags']?['environmentName'], '/flows/', workflow()?['name'], '/runs/', workflow()?['run']?['name'])}` | 공통 오류 로그 기록 |
+| 5.3 | 　`Terminate_failed` | 컨트롤 › **종료(Terminate)** | 상태: 실패함(Failed) · 코드 `FlowFailed` · 메시지 `@{concat('실패 액션: ', coalesce(first(body('Failed_actions'))?['name'], '?'))}`<br>**실행 후 구성**: 'Log_error' 이(가) 성공함, 실패함, 건너뜀 |  |
+
+## P3P-F12 주간 정리(주간보고 초안)
+
+**목적:** 금요일 16:00 이번 주 완료·신규·기한초과·결정·회신 대기·공장 자료 수신 패턴을 자동 집계한 주간보고 초안을 본인에게.
+
+**만들기:** 예약된 클라우드 흐름 · 흐름 이름 `P3P-F12 주간 정리(주간보고 초안)`
+
+**트리거:** 일정 › **Recurrence(되풀이)**
+
+- 간격 1 / 빈도 **주(Week)** · 표준 시간대 **(UTC+09:00) Seoul** · 요일 월~금 · 시간 16 · 분 0
+
+| 단계 | 액션 이름(이름 바꾸기) | 추가할 액션 | 설정값 | 비고 |
+|---|---|---|---|---|
+| 1 | `Config` | 데이터 작업 › **작성(Compose)** | 입력(Inputs): `{"site": "{{SITE_URL}}", "me": "{{ME}}", "hostWorkbook": "{{HOST_WORKBOOK}}", "scriptFolder": "{{SCRIPT_FOLDER}}", "prototypeMode": true, "channel": "{{NOTIFY_CHANNEL}}", "factoryFolder": "{{FACTORY_FOLDER}}", "links": {"myActions": "{{VIEW_MY_ACTIONS}}", "decisionQueue": "{{VIEW_DECISION_QUEUE}}", "candidates": "{{VIEW_CANDIDATES}}"}}` | 설정값 모음. 샌드박스→운영 전환 시 이 값만 바꾼다(트리거의 사이트·목록은 직접 다시 선택). |
+| 2 | `Today` | 데이터 작업 › **작성(Compose)** | 입력(Inputs): `@{convertFromUtc(utcNow(), 'Korea Standard Time', 'yyyy-MM-dd')}` | 오늘(KST) |
+| 3 | `Since` | 데이터 작업 › **작성(Compose)** | 입력(Inputs): `@{addDays(outputs('Today'), -35, 'yyyy-MM-dd')}` | 조회 시작일(35일 전) |
+| 4 | `Try` | 컨트롤 › **범위(Scope)** | - |  |
+| 4.1 | 　`Get_my_actions` | SharePoint › **Get items** | 사이트 주소(Site Address) — '사용자 지정 값 입력': `@{outputs('Config')?['site']}`<br>목록 이름(List Name) — '사용자 지정 값 입력': `ActionItems`<br>필터 쿼리(Filter Query): `Owner/EMail eq '@{outputs('Config')?['me']}' and (Status eq '미착수' or Status eq '진행중' or Modified ge '@{outputs('Since')}')`<br>상위 개수(Top Count): `2000` | 내 미결 + 최근 35일 변경 |
+| 4.2 | 　`Get_decisions` | SharePoint › **Get items** | 사이트 주소(Site Address) — '사용자 지정 값 입력': `@{outputs('Config')?['site']}`<br>목록 이름(List Name) — '사용자 지정 값 입력': `DecisionLog`<br>필터 쿼리(Filter Query): `Status eq '결정요청' or Modified ge '@{outputs('Since')}'`<br>상위 개수(Top Count): `1000` | 결정 대기 + 최근 35일 변경 |
+| 4.3 | 　`Get_inbox` | SharePoint › **Get items** | 사이트 주소(Site Address) — '사용자 지정 값 입력': `@{outputs('Config')?['site']}`<br>목록 이름(List Name) — '사용자 지정 값 입력': `FactoryInbox`<br>필터 쿼리(Filter Query): `ReceivedAt ge '@{outputs('Since')}'`<br>상위 개수(Top Count): `2000` | 최근 35일 공장 자료 수신 |
+| 4.4 | 　`Run_weekly` | Excel Online (Business) › **Run script from SharePoint library** | 통합 문서(Workbook) 위치·파일: `@{outputs('Config')?['hostWorkbook']}`<br>스크립트(Script) 위치·파일: `@{outputs('Config')?['scriptFolder']}/BuildWeeklyDigest.osts`<br>매개변수 `meEmail`: `@{outputs('Config')?['me']}`<br>매개변수 `todayKst`: `@{outputs('Today')}`<br>매개변수 `actionsJson`: `@{string(body('Get_my_actions')?['value'])}`<br>매개변수 `decisionsJson`: `@{string(body('Get_decisions')?['value'])}`<br>매개변수 `inboxJson`: `@{string(body('Get_inbox')?['value'])}` | 주간 집계·초안 생성(Office Scripts) |
+| 4.5 | 　`Send_weekly` | 컨트롤 › **조건(Condition)** | 왼쪽 값: **fx** `equals(outputs('Config')?['channel'], 'teams')` · 연산자 **같음(is equal to)** · 오른쪽 값: **fx** `true` | 본인에게 알림(Teams 메시지 또는 메일) — 설정 channel 이 teams 면 Teams, 아니면 메일 |
+| 4.5.예 | 　　**'True(예)' 분기** | | | |
+| 4.5.예.1 | 　　`Send_weekly_teams` | Microsoft Teams › **Post message in a chat or channel** | 게시자(Post as): `Flow bot`<br>게시 위치(Post in): `Chat with Flow bot`<br>받는 사람(Recipient): `@{outputs('Config')?['me']}`<br>메시지(Message): `@{body('Run_weekly')?['result']?['htmlSummary']}` | Teams Flow bot 메시지 |
+| 4.5.아니요 | 　　**'False(아니요)' 분기** | | | |
+| 4.5.아니요.1 | 　　`Send_weekly_email` | Office 365 Outlook › **Send an email (V2)** | 받는 사람(To): `@{outputs('Config')?['me']}`<br>제목(Subject): `@{concat('[주간 정리] ', body('Run_weekly')?['result']?['week'], ' 초안')}`<br>본문(Body) / 파일 콘텐츠(File Content): `@{body('Run_weekly')?['result']?['htmlSummary']}` | 메일 알림(Workflows 앱 없을 때) |
+| 5 | `Catch` | 컨트롤 › **범위(Scope)** | **실행 후 구성**: 'Try' 이(가) 실패함, 시간 초과됨 | 실행 후 구성: Try가 '실패함'·'시간 초과됨'일 때 |
+| 5.1 | 　`Failed_actions` | 데이터 작업 › **배열 필터링(Filter array)** | 보낸 사람(From): **fx** `result('Try')` · '고급 모드에서 편집' 후: `@equals(item()?['status'], 'Failed')` | Try 안에서 실패한 액션만 추림 |
+| 5.2 | 　`Log_error` | SharePoint › **Create item** | 사이트 주소(Site Address) — '사용자 지정 값 입력': `@{outputs('Config')?['site']}`<br>목록 이름(List Name) — '사용자 지정 값 입력': `FlowErrorLog`<br>Flow 이름 `Title`: `@{workflow()?['tags']?['flowDisplayName']}`<br>실행 ID `FlowRunId`: `@{workflow()?['run']?['name']}`<br>실패 액션 `FailedAction`: `@{coalesce(first(body('Failed_actions'))?['name'], '')}`<br>오류 메시지 `ErrorMessage`: `@{coalesce(first(body('Failed_actions'))?['error']?['message'], '상세 메시지 없음(실행 기록 확인)')}`<br>심각도 `Severity` (선택 값): `Critical`<br>조치완료 `Resolved`: `false`(식 탭)<br>실행 기록 링크 `RunUrl`: `@{concat('https://make.powerautomate.com/environments/', workflow()?['tags']?['environmentName'], '/flows/', workflow()?['name'], '/runs/', workflow()?['run']?['name'])}` | 공통 오류 로그 기록 |
+| 5.3 | 　`Terminate_failed` | 컨트롤 › **종료(Terminate)** | 상태: 실패함(Failed) · 코드 `FlowFailed` · 메시지 `@{concat('실패 액션: ', coalesce(first(body('Failed_actions'))?['name'], '?'))}`<br>**실행 후 구성**: 'Log_error' 이(가) 성공함, 실패함, 건너뜀 |  |
+
+## P3P-F13 메일 문구로 기한 자동 제안
+
+**목적:** 플래그로 등록된 할 일에 기한이 없으면 메일 제목·미리보기의 '내일까지·10/30까지·금요일까지·긴급' 같은 표현으로 기한·우선순위를 채우고 근거를 남김.
+
+**만들기:** 자동화된 클라우드 흐름 · 흐름 이름 `P3P-F13 메일 문구로 기한 자동 제안`
+
+**트리거:** SharePoint › **When an item is created or modified** (항목을 만들거나 수정한 경우)
+
+- 사이트 주소: `{{SITE_URL}}` · 목록 이름: `ActionItems`
+- 트리거 카드 **… › 설정(Settings) › 트리거 조건(Trigger conditions) › + 추가**: `@and(empty(triggerOutputs()?['body/DueDate']), empty(triggerOutputs()?['body/DueHintChecked']), equals(triggerOutputs()?['body/CreatedVia/Value'], 'Outlook 플래그'))`
+
+| 단계 | 액션 이름(이름 바꾸기) | 추가할 액션 | 설정값 | 비고 |
+|---|---|---|---|---|
+| 1 | `Config` | 데이터 작업 › **작성(Compose)** | 입력(Inputs): `{"site": "{{SITE_URL}}", "me": "{{ME}}", "hostWorkbook": "{{HOST_WORKBOOK}}", "scriptFolder": "{{SCRIPT_FOLDER}}", "prototypeMode": true, "channel": "{{NOTIFY_CHANNEL}}", "factoryFolder": "{{FACTORY_FOLDER}}", "links": {"myActions": "{{VIEW_MY_ACTIONS}}", "decisionQueue": "{{VIEW_DECISION_QUEUE}}", "candidates": "{{VIEW_CANDIDATES}}"}}` | 설정값 모음. 샌드박스→운영 전환 시 이 값만 바꾼다(트리거의 사이트·목록은 직접 다시 선택). |
+| 2 | `Try` | 컨트롤 › **범위(Scope)** | - |  |
+| 2.1 | 　`Recheck` | SharePoint › **Get item** | 사이트 주소(Site Address) — '사용자 지정 값 입력': `@{outputs('Config')?['site']}`<br>목록 이름(List Name) — '사용자 지정 값 입력': `ActionItems`<br>ID: **fx** `triggerOutputs()?['body/ID']` | 최신 값 재확인(중복 실행 방어) |
+| 2.2 | 　`If_already` | 컨트롤 › **조건(Condition)** | 왼쪽 값: **fx** `not(and(empty(body('Recheck')?['DueDate']), empty(body('Recheck')?['DueHintChecked'])))` · 연산자 **같음(is equal to)** · 오른쪽 값: **fx** `true` |  |
+| 2.2.예 | 　　**'True(예)' 분기** | | | |
+| 2.2.예.1 | 　　`Stop_already` | 컨트롤 › **종료(Terminate)** | 상태: 성공함(Succeeded) |  |
+| 2.3 | 　`Get_holidays` | SharePoint › **Get items** | 사이트 주소(Site Address) — '사용자 지정 값 입력': `@{outputs('Config')?['site']}`<br>목록 이름(List Name) — '사용자 지정 값 입력': `Holidays`<br>상위 개수(Top Count): `500` | 휴무일(내일·모레 계산용) |
+| 2.4 | 　`Run_hint` | Excel Online (Business) › **Run script from SharePoint library** | 통합 문서(Workbook) 위치·파일: `@{outputs('Config')?['hostWorkbook']}`<br>스크립트(Script) 위치·파일: `@{outputs('Config')?['scriptFolder']}/ParseDueHint.osts`<br>매개변수 `text`: `@{concat(body('Recheck')?['Title'], ' ', coalesce(body('Recheck')?['Evidence'], ''))}`<br>매개변수 `receivedKst`: `@{convertFromUtc(body('Recheck')?['Created'], 'Korea Standard Time', 'yyyy-MM-dd')}`<br>매개변수 `holidaysJson`: `@{string(body('Get_holidays')?['value'])}` | 기한·긴급도 추정(Office Scripts) |
+| 2.5 | 　`Update_hint` | SharePoint › **Update item** | 사이트 주소(Site Address) — '사용자 지정 값 입력': `@{outputs('Config')?['site']}`<br>목록 이름(List Name) — '사용자 지정 값 입력': `ActionItems`<br>ID: **fx** `triggerOutputs()?['body/ID']`<br>할 일 `Title`: `@{body('Recheck')?['Title']}`<br>담당자 `Owner` (사람: 이메일): `@{body('Recheck')?['Owner']?['Claims']}`<br>상태 `Status` (선택 값): `@{body('Recheck')?['Status']?['Value']}`<br>유형 `ActionType` (선택 값): `@{body('Recheck')?['ActionType']?['Value']}`<br>기한 `DueDate`: **fx** `if(empty(body('Run_hint')?['result']?['dueDate']), null, body('Run_hint')?['result']?['dueDate'])`<br>우선순위 `Priority` (선택 값): `@{if(equals(body('Run_hint')?['result']?['priority'], '높음'), '높음', coalesce(body('Recheck')?['Priority']?['Value'], '보통'))}`<br>기한 근거 `DueHint`: `@{if(empty(body('Run_hint')?['result']?['phrase']), '근거 없음 — 직접 입력', concat('메일 문구 [', body('Run_hint')?['result']?['phrase'], ']에서 추정'))}`<br>기한 추정 완료(시스템) `DueHintChecked`: `Y` | 기한·우선순위·근거 기록(사람이 언제든 수정 가능) |
+| 3 | `Catch` | 컨트롤 › **범위(Scope)** | **실행 후 구성**: 'Try' 이(가) 실패함, 시간 초과됨 | 실행 후 구성: Try가 '실패함'·'시간 초과됨'일 때 |
+| 3.1 | 　`Failed_actions` | 데이터 작업 › **배열 필터링(Filter array)** | 보낸 사람(From): **fx** `result('Try')` · '고급 모드에서 편집' 후: `@equals(item()?['status'], 'Failed')` | Try 안에서 실패한 액션만 추림 |
+| 3.2 | 　`Log_error` | SharePoint › **Create item** | 사이트 주소(Site Address) — '사용자 지정 값 입력': `@{outputs('Config')?['site']}`<br>목록 이름(List Name) — '사용자 지정 값 입력': `FlowErrorLog`<br>Flow 이름 `Title`: `@{workflow()?['tags']?['flowDisplayName']}`<br>실행 ID `FlowRunId`: `@{workflow()?['run']?['name']}`<br>실패 액션 `FailedAction`: `@{coalesce(first(body('Failed_actions'))?['name'], '')}`<br>오류 메시지 `ErrorMessage`: `@{coalesce(first(body('Failed_actions'))?['error']?['message'], '상세 메시지 없음(실행 기록 확인)')}`<br>심각도 `Severity` (선택 값): `Critical`<br>조치완료 `Resolved`: `false`(식 탭)<br>실행 기록 링크 `RunUrl`: `@{concat('https://make.powerautomate.com/environments/', workflow()?['tags']?['environmentName'], '/flows/', workflow()?['name'], '/runs/', workflow()?['run']?['name'])}` | 공통 오류 로그 기록 |
+| 3.3 | 　`Terminate_failed` | 컨트롤 › **종료(Terminate)** | 상태: 실패함(Failed) · 코드 `FlowFailed` · 메시지 `@{concat('실패 액션: ', coalesce(first(body('Failed_actions'))?['name'], '?'))}`<br>**실행 후 구성**: 'Log_error' 이(가) 성공함, 실패함, 건너뜀 |  |
+
 ## P3P-F2 메일 플래그(Sent Items) → 회신대기 등록
 
 **목적:** Outlook 'Sent Items' 폴더에서 플래그한 메일을 등록. 같은 메일 재플래그 시 중복 생성 없음.
@@ -53,7 +182,7 @@
 
 | 단계 | 액션 이름(이름 바꾸기) | 추가할 액션 | 설정값 | 비고 |
 |---|---|---|---|---|
-| 1 | `Config` | 데이터 작업 › **작성(Compose)** | 입력(Inputs): `{"site": "{{SITE_URL}}", "me": "{{ME}}", "hostWorkbook": "{{HOST_WORKBOOK}}", "scriptFolder": "{{SCRIPT_FOLDER}}", "prototypeMode": true, "channel": "{{NOTIFY_CHANNEL}}", "links": {"myActions": "{{VIEW_MY_ACTIONS}}", "decisionQueue": "{{VIEW_DECISION_QUEUE}}", "candidates": "{{VIEW_CANDIDATES}}"}}` | 설정값 모음. 샌드박스→운영 전환 시 이 값만 바꾼다(트리거의 사이트·목록은 직접 다시 선택). |
+| 1 | `Config` | 데이터 작업 › **작성(Compose)** | 입력(Inputs): `{"site": "{{SITE_URL}}", "me": "{{ME}}", "hostWorkbook": "{{HOST_WORKBOOK}}", "scriptFolder": "{{SCRIPT_FOLDER}}", "prototypeMode": true, "channel": "{{NOTIFY_CHANNEL}}", "factoryFolder": "{{FACTORY_FOLDER}}", "links": {"myActions": "{{VIEW_MY_ACTIONS}}", "decisionQueue": "{{VIEW_DECISION_QUEUE}}", "candidates": "{{VIEW_CANDIDATES}}"}}` | 설정값 모음. 샌드박스→운영 전환 시 이 값만 바꾼다(트리거의 사이트·목록은 직접 다시 선택). |
 | 2 | `Try` | 컨트롤 › **범위(Scope)** | - |  |
 | 2.1 | 　`Check_message_id` | 컨트롤 › **조건(Condition)** | 왼쪽 값: **fx** `empty(triggerOutputs()?['body/id'])` · 연산자 **같음(is equal to)** · 오른쪽 값: **fx** `true` | 메일 ID 누락 방어 |
 | 2.1.예 | 　　**'True(예)' 분기** | | | |
@@ -82,7 +211,7 @@
 
 | 단계 | 액션 이름(이름 바꾸기) | 추가할 액션 | 설정값 | 비고 |
 |---|---|---|---|---|
-| 1 | `Config` | 데이터 작업 › **작성(Compose)** | 입력(Inputs): `{"site": "{{SITE_URL}}", "me": "{{ME}}", "hostWorkbook": "{{HOST_WORKBOOK}}", "scriptFolder": "{{SCRIPT_FOLDER}}", "prototypeMode": true, "channel": "{{NOTIFY_CHANNEL}}", "links": {"myActions": "{{VIEW_MY_ACTIONS}}", "decisionQueue": "{{VIEW_DECISION_QUEUE}}", "candidates": "{{VIEW_CANDIDATES}}"}}` | 설정값 모음. 샌드박스→운영 전환 시 이 값만 바꾼다(트리거의 사이트·목록은 직접 다시 선택). |
+| 1 | `Config` | 데이터 작업 › **작성(Compose)** | 입력(Inputs): `{"site": "{{SITE_URL}}", "me": "{{ME}}", "hostWorkbook": "{{HOST_WORKBOOK}}", "scriptFolder": "{{SCRIPT_FOLDER}}", "prototypeMode": true, "channel": "{{NOTIFY_CHANNEL}}", "factoryFolder": "{{FACTORY_FOLDER}}", "links": {"myActions": "{{VIEW_MY_ACTIONS}}", "decisionQueue": "{{VIEW_DECISION_QUEUE}}", "candidates": "{{VIEW_CANDIDATES}}"}}` | 설정값 모음. 샌드박스→운영 전환 시 이 값만 바꾼다(트리거의 사이트·목록은 직접 다시 선택). |
 | 2 | `Try` | 컨트롤 › **범위(Scope)** | - |  |
 | 2.1 | 　`Update_item` | SharePoint › **Update item** | 사이트 주소(Site Address) — '사용자 지정 값 입력': `@{outputs('Config')?['site']}`<br>목록 이름(List Name) — '사용자 지정 값 입력': `ActionItems`<br>ID: **fx** `triggerOutputs()?['body/ID']`<br>할 일 `Title`: `@{triggerOutputs()?['body/Title']}`<br>담당자 `Owner` (사람: 이메일): `@{triggerOutputs()?['body/Owner/Claims']}`<br>상태 `Status` (선택 값): `@{triggerOutputs()?['body/Status/Value']}`<br>유형 `ActionType` (선택 값): `@{triggerOutputs()?['body/ActionType/Value']}`<br>액션번호 `ActionID`: `@{if(empty(triggerOutputs()?['body/ActionID']), concat('ACT-', convertFromUtc(triggerOutputs()?['body/Created'], 'Korea Standard Time', 'yyyy'), '-', formatNumber(triggerOutputs()?['body/ID'], '00000')), triggerOutputs()?['body/ActionID'])}`<br>완료일시 `CompletedAt`: **fx** `if(equals(triggerOutputs()?['body/Status/Value'], '완료'), coalesce(triggerOutputs()?['body/CompletedAt'], utcNow()), null)`<br>이전 상태(시스템) `PrevStatus`: `@{triggerOutputs()?['body/Status/Value']}` | 번호 부여·상태 변경 기록. PrevStatus를 현재 상태로 맞춰 자기 재실행을 막는다 |
 | 3 | `Catch` | 컨트롤 › **범위(Scope)** | **실행 후 구성**: 'Try' 이(가) 실패함, 시간 초과됨 | 실행 후 구성: Try가 '실패함'·'시간 초과됨'일 때 |
@@ -103,7 +232,7 @@
 
 | 단계 | 액션 이름(이름 바꾸기) | 추가할 액션 | 설정값 | 비고 |
 |---|---|---|---|---|
-| 1 | `Config` | 데이터 작업 › **작성(Compose)** | 입력(Inputs): `{"site": "{{SITE_URL}}", "me": "{{ME}}", "hostWorkbook": "{{HOST_WORKBOOK}}", "scriptFolder": "{{SCRIPT_FOLDER}}", "prototypeMode": true, "channel": "{{NOTIFY_CHANNEL}}", "links": {"myActions": "{{VIEW_MY_ACTIONS}}", "decisionQueue": "{{VIEW_DECISION_QUEUE}}", "candidates": "{{VIEW_CANDIDATES}}"}}` | 설정값 모음. 샌드박스→운영 전환 시 이 값만 바꾼다(트리거의 사이트·목록은 직접 다시 선택). |
+| 1 | `Config` | 데이터 작업 › **작성(Compose)** | 입력(Inputs): `{"site": "{{SITE_URL}}", "me": "{{ME}}", "hostWorkbook": "{{HOST_WORKBOOK}}", "scriptFolder": "{{SCRIPT_FOLDER}}", "prototypeMode": true, "channel": "{{NOTIFY_CHANNEL}}", "factoryFolder": "{{FACTORY_FOLDER}}", "links": {"myActions": "{{VIEW_MY_ACTIONS}}", "decisionQueue": "{{VIEW_DECISION_QUEUE}}", "candidates": "{{VIEW_CANDIDATES}}"}}` | 설정값 모음. 샌드박스→운영 전환 시 이 값만 바꾼다(트리거의 사이트·목록은 직접 다시 선택). |
 | 2 | `Try` | 컨트롤 › **범위(Scope)** | - |  |
 | 2.1 | 　`Update_item` | SharePoint › **Update item** | 사이트 주소(Site Address) — '사용자 지정 값 입력': `@{outputs('Config')?['site']}`<br>목록 이름(List Name) — '사용자 지정 값 입력': `DecisionLog`<br>ID: **fx** `triggerOutputs()?['body/ID']`<br>결정 제목 `Title`: `@{triggerOutputs()?['body/Title']}`<br>결정 내용 `DecisionText`: `@{triggerOutputs()?['body/DecisionText']}`<br>상태 `Status` (선택 값): `@{triggerOutputs()?['body/Status/Value']}`<br>결정번호 `DecisionID`: `@{if(empty(triggerOutputs()?['body/DecisionID']), concat('DEC-', convertFromUtc(triggerOutputs()?['body/Created'], 'Korea Standard Time', 'yyyy'), '-', formatNumber(triggerOutputs()?['body/ID'], '00000')), triggerOutputs()?['body/DecisionID'])}`<br>확정일 `DecidedAt`: **fx** `if(and(equals(triggerOutputs()?['body/Status/Value'], '확정'), empty(triggerOutputs()?['body/DecidedAt'])), convertFromUtc(utcNow(), 'Korea Standard Time', 'yyyy-MM-dd'), triggerOutputs()?['body/DecidedAt'])`<br>결정 요청일 `RequestedAt`: **fx** `if(and(equals(triggerOutputs()?['body/Status/Value'], '결정요청'), empty(triggerOutputs()?['body/RequestedAt'])), convertFromUtc(utcNow(), 'Korea Standard Time', 'yyyy-MM-dd'), triggerOutputs()?['body/RequestedAt'])`<br>이전 상태(시스템) `PrevStatus`: `@{triggerOutputs()?['body/Status/Value']}` | 번호 부여·상태 변경 기록. PrevStatus를 현재 상태로 맞춰 자기 재실행을 막는다 |
 | 3 | `Catch` | 컨트롤 › **범위(Scope)** | **실행 후 구성**: 'Try' 이(가) 실패함, 시간 초과됨 | 실행 후 구성: Try가 '실패함'·'시간 초과됨'일 때 |
@@ -123,7 +252,7 @@
 
 | 단계 | 액션 이름(이름 바꾸기) | 추가할 액션 | 설정값 | 비고 |
 |---|---|---|---|---|
-| 1 | `Config` | 데이터 작업 › **작성(Compose)** | 입력(Inputs): `{"site": "{{SITE_URL}}", "me": "{{ME}}", "hostWorkbook": "{{HOST_WORKBOOK}}", "scriptFolder": "{{SCRIPT_FOLDER}}", "prototypeMode": true, "channel": "{{NOTIFY_CHANNEL}}", "links": {"myActions": "{{VIEW_MY_ACTIONS}}", "decisionQueue": "{{VIEW_DECISION_QUEUE}}", "candidates": "{{VIEW_CANDIDATES}}"}}` | 설정값 모음. 샌드박스→운영 전환 시 이 값만 바꾼다(트리거의 사이트·목록은 직접 다시 선택). |
+| 1 | `Config` | 데이터 작업 › **작성(Compose)** | 입력(Inputs): `{"site": "{{SITE_URL}}", "me": "{{ME}}", "hostWorkbook": "{{HOST_WORKBOOK}}", "scriptFolder": "{{SCRIPT_FOLDER}}", "prototypeMode": true, "channel": "{{NOTIFY_CHANNEL}}", "factoryFolder": "{{FACTORY_FOLDER}}", "links": {"myActions": "{{VIEW_MY_ACTIONS}}", "decisionQueue": "{{VIEW_DECISION_QUEUE}}", "candidates": "{{VIEW_CANDIDATES}}"}}` | 설정값 모음. 샌드박스→운영 전환 시 이 값만 바꾼다(트리거의 사이트·목록은 직접 다시 선택). |
 | 2 | `Try` | 컨트롤 › **범위(Scope)** | - |  |
 | 2.1 | 　`Content` | 데이터 작업 › **작성(Compose)** | 입력(Inputs): `@{if(greater(length(coalesce(triggerBody()?['messagePayload']?['body']?['content'], '')), 1000), substring(triggerBody()?['messagePayload']?['body']?['content'], 0, 1000), coalesce(triggerBody()?['messagePayload']?['body']?['content'], ''))}` | 메시지 본문 앞 1,000자(근거로 저장) |
 | 2.2 | 　`Inputs` | 데이터 작업 › **작성(Compose)** | 입력(Inputs): `{"kind": "@{coalesce(triggerBody()?['cardOutputs']?['kind'], '액션')}", "title": "@{trim(coalesce(triggerBody()?['cardOutputs']?['title'], ''))}", "owner": "@{toLower(if(empty(triggerBody()?['cardOutputs']?['ownerEmail']), outputs('Config')?['me'], trim(triggerBody()?['cardOutputs']?['ownerEmail'])))}", "due": "@{coalesce(triggerBody()?['cardOutputs']?['dueDate'], '')}", "decisionId": "@{trim(coalesce(triggerBody()?['cardOutputs']?['decisionId'], ''))}", "messageId": "@{coalesce(triggerBody()?['messagePayload']?['id'], '')}", "link": "@{coalesce(triggerBody()?['linkToMessage'], '')}"}` | 카드 입력값 정리(담당자 비면 나) |
@@ -133,7 +262,7 @@
 | 2.3.예.1.예 | 　　　**'True(예)' 분기** | | | |
 | 2.3.예.1.예.1 | 　　　`Tell_missing_teams` | Microsoft Teams › **Post message in a chat or channel** | 게시자(Post as): `Flow bot`<br>게시 위치(Post in): `Chat with Flow bot`<br>받는 사람(Recipient): `@{outputs('Config')?['me']}`<br>메시지(Message): `기록하지 않았습니다: 제목 또는 메시지 정보가 비어 있습니다.` | Teams Flow bot 메시지 |
 | 2.3.예.1.아니요 | 　　　**'False(아니요)' 분기** | | | |
-| 2.3.예.1.아니요.1 | 　　　`Tell_missing_email` | Office 365 Outlook › **Send an email (V2)** | 받는 사람(To): `@{outputs('Config')?['me']}`<br>제목(Subject): `[P3 알림]`<br>본문(Body): `기록하지 않았습니다: 제목 또는 메시지 정보가 비어 있습니다.` | 메일 알림(Workflows 앱 없을 때) |
+| 2.3.예.1.아니요.1 | 　　　`Tell_missing_email` | Office 365 Outlook › **Send an email (V2)** | 받는 사람(To): `@{outputs('Config')?['me']}`<br>제목(Subject): `[P3 알림]`<br>본문(Body) / 파일 콘텐츠(File Content): `기록하지 않았습니다: 제목 또는 메시지 정보가 비어 있습니다.` | 메일 알림(Workflows 앱 없을 때) |
 | 2.3.예.2 | 　　`Stop_missing` | 컨트롤 › **종료(Terminate)** | 상태: 실패함(Failed) · 코드 `InputMissing` · 메시지 `제목 또는 메시지 ID 누락` |  |
 | 2.4 | 　`Check_owner` | Office 365 Users › **Get user profile (V2)** | 사용자(UPN): `@{outputs('Inputs')?['owner']}` | 담당자 이메일이 실제 사용자인지 확인 |
 | 2.5 | 　`If_action` | 컨트롤 › **조건(Condition)** | 왼쪽 값: **fx** `equals(outputs('Inputs')?['kind'], '액션')` · 연산자 **같음(is equal to)** · 오른쪽 값: **fx** `true` | 종류별 분기: 액션 / 결정·결정요청 |
@@ -145,7 +274,7 @@
 | 2.5.예.2.예.1.예 | 　　　　**'True(예)' 분기** | | | |
 | 2.5.예.2.예.1.예.1 | 　　　　`Tell_dup_action_teams` | Microsoft Teams › **Post message in a chat or channel** | 게시자(Post as): `Flow bot`<br>게시 위치(Post in): `Chat with Flow bot`<br>받는 사람(Recipient): `@{outputs('Config')?['me']}`<br>메시지(Message): `이미 기록된 메시지입니다(중복 생성 안 함).` | Teams Flow bot 메시지 |
 | 2.5.예.2.예.1.아니요 | 　　　　**'False(아니요)' 분기** | | | |
-| 2.5.예.2.예.1.아니요.1 | 　　　　`Tell_dup_action_email` | Office 365 Outlook › **Send an email (V2)** | 받는 사람(To): `@{outputs('Config')?['me']}`<br>제목(Subject): `[P3 알림]`<br>본문(Body): `이미 기록된 메시지입니다(중복 생성 안 함).` | 메일 알림(Workflows 앱 없을 때) |
+| 2.5.예.2.예.1.아니요.1 | 　　　　`Tell_dup_action_email` | Office 365 Outlook › **Send an email (V2)** | 받는 사람(To): `@{outputs('Config')?['me']}`<br>제목(Subject): `[P3 알림]`<br>본문(Body) / 파일 콘텐츠(File Content): `이미 기록된 메시지입니다(중복 생성 안 함).` | 메일 알림(Workflows 앱 없을 때) |
 | 2.5.예.2.예.2 | 　　　`Stop_dup_action` | 컨트롤 › **종료(Terminate)** | 상태: 성공함(Succeeded) |  |
 | 2.5.예.3 | 　　`Create_action` | SharePoint › **Create item** | 사이트 주소(Site Address) — '사용자 지정 값 입력': `@{outputs('Config')?['site']}`<br>목록 이름(List Name) — '사용자 지정 값 입력': `ActionItems`<br>할 일 `Title`: `@{outputs('Inputs')?['title']}`<br>담당자 `Owner` (사람: 이메일): `@{outputs('Inputs')?['owner']}`<br>기한 `DueDate`: **fx** `if(empty(outputs('Inputs')?['due']), null, outputs('Inputs')?['due'])`<br>상태 `Status` (선택 값): `미착수`<br>유형 `ActionType` (선택 값): `실행`<br>출처 `Source` (선택 값): `Teams 메시지`<br>등록 경로 `CreatedVia` (선택 값): `Teams 메시지`<br>우선순위 `Priority` (선택 값): `보통`<br>원문 링크 `SourceLink`: `@{outputs('Inputs')?['link']}`<br>근거 문장 `Evidence`: `@{outputs('Content')}`<br>결정번호 `DecisionID`: `@{outputs('Inputs')?['decisionId']}`<br>원본 메시지 ID(시스템) `SourceMessageId`: `@{outputs('Inputs')?['messageId']}` | 액션 등록 |
 | 2.5.아니요 | 　　**'False(아니요)' 분기** | | | |
@@ -156,14 +285,14 @@
 | 2.5.아니요.2.예.1.예 | 　　　　**'True(예)' 분기** | | | |
 | 2.5.아니요.2.예.1.예.1 | 　　　　`Tell_dup_decision_teams` | Microsoft Teams › **Post message in a chat or channel** | 게시자(Post as): `Flow bot`<br>게시 위치(Post in): `Chat with Flow bot`<br>받는 사람(Recipient): `@{outputs('Config')?['me']}`<br>메시지(Message): `이미 기록된 메시지입니다(중복 생성 안 함).` | Teams Flow bot 메시지 |
 | 2.5.아니요.2.예.1.아니요 | 　　　　**'False(아니요)' 분기** | | | |
-| 2.5.아니요.2.예.1.아니요.1 | 　　　　`Tell_dup_decision_email` | Office 365 Outlook › **Send an email (V2)** | 받는 사람(To): `@{outputs('Config')?['me']}`<br>제목(Subject): `[P3 알림]`<br>본문(Body): `이미 기록된 메시지입니다(중복 생성 안 함).` | 메일 알림(Workflows 앱 없을 때) |
+| 2.5.아니요.2.예.1.아니요.1 | 　　　　`Tell_dup_decision_email` | Office 365 Outlook › **Send an email (V2)** | 받는 사람(To): `@{outputs('Config')?['me']}`<br>제목(Subject): `[P3 알림]`<br>본문(Body) / 파일 콘텐츠(File Content): `이미 기록된 메시지입니다(중복 생성 안 함).` | 메일 알림(Workflows 앱 없을 때) |
 | 2.5.아니요.2.예.2 | 　　　`Stop_dup_decision` | 컨트롤 › **종료(Terminate)** | 상태: 성공함(Succeeded) |  |
 | 2.5.아니요.3 | 　　`Create_decision` | SharePoint › **Create item** | 사이트 주소(Site Address) — '사용자 지정 값 입력': `@{outputs('Config')?['site']}`<br>목록 이름(List Name) — '사용자 지정 값 입력': `DecisionLog`<br>결정 제목 `Title`: `@{outputs('Inputs')?['title']}`<br>결정 내용 `DecisionText`: `@{concat(outputs('Inputs')?['title'], ' / 원문: ', outputs('Content'))}`<br>상태 `Status` (선택 값): `@{if(equals(outputs('Inputs')?['kind'], '결정요청'), '결정요청', '확정')}`<br>결정권자 `Decider` (사람: 이메일): `@{outputs('Inputs')?['owner']}`<br>결정 요청자 `RequestedBy` (사람: 이메일): `@{outputs('Config')?['me']}`<br>원문 링크 `SourceLink`: `@{outputs('Inputs')?['link']}`<br>등록 경로 `CreatedVia` (선택 값): `Teams 메시지`<br>원본 메시지 ID(시스템) `SourceMessageId`: `@{outputs('Inputs')?['messageId']}` | 결정 또는 결정요청 등록 |
 | 2.6 | 　`Tell_done` | 컨트롤 › **조건(Condition)** | 왼쪽 값: **fx** `equals(outputs('Config')?['channel'], 'teams')` · 연산자 **같음(is equal to)** · 오른쪽 값: **fx** `true` | 본인에게 알림(Teams 메시지 또는 메일) — 설정 channel 이 teams 면 Teams, 아니면 메일 |
 | 2.6.예 | 　　**'True(예)' 분기** | | | |
 | 2.6.예.1 | 　　`Tell_done_teams` | Microsoft Teams › **Post message in a chat or channel** | 게시자(Post as): `Flow bot`<br>게시 위치(Post in): `Chat with Flow bot`<br>받는 사람(Recipient): `@{outputs('Config')?['me']}`<br>메시지(Message): `@{concat('기록됨(', outputs('Inputs')?['kind'], '): ', outputs('Inputs')?['title'], ' — 번호는 잠시 후 목록에서 확인')}` | Teams Flow bot 메시지 |
 | 2.6.아니요 | 　　**'False(아니요)' 분기** | | | |
-| 2.6.아니요.1 | 　　`Tell_done_email` | Office 365 Outlook › **Send an email (V2)** | 받는 사람(To): `@{outputs('Config')?['me']}`<br>제목(Subject): `[P3 알림]`<br>본문(Body): `@{concat('기록됨(', outputs('Inputs')?['kind'], '): ', outputs('Inputs')?['title'], ' — 번호는 잠시 후 목록에서 확인')}` | 메일 알림(Workflows 앱 없을 때) |
+| 2.6.아니요.1 | 　　`Tell_done_email` | Office 365 Outlook › **Send an email (V2)** | 받는 사람(To): `@{outputs('Config')?['me']}`<br>제목(Subject): `[P3 알림]`<br>본문(Body) / 파일 콘텐츠(File Content): `@{concat('기록됨(', outputs('Inputs')?['kind'], '): ', outputs('Inputs')?['title'], ' — 번호는 잠시 후 목록에서 확인')}` | 메일 알림(Workflows 앱 없을 때) |
 | 3 | `Catch` | 컨트롤 › **범위(Scope)** | **실행 후 구성**: 'Try' 이(가) 실패함, 시간 초과됨 | 실행 후 구성: Try가 '실패함'·'시간 초과됨'일 때 |
 | 3.1 | 　`Failed_actions` | 데이터 작업 › **배열 필터링(Filter array)** | 보낸 사람(From): **fx** `result('Try')` · '고급 모드에서 편집' 후: `@equals(item()?['status'], 'Failed')` | Try 안에서 실패한 액션만 추림 |
 | 3.2 | 　`Log_error` | SharePoint › **Create item** | 사이트 주소(Site Address) — '사용자 지정 값 입력': `@{outputs('Config')?['site']}`<br>목록 이름(List Name) — '사용자 지정 값 입력': `FlowErrorLog`<br>Flow 이름 `Title`: `@{workflow()?['tags']?['flowDisplayName']}`<br>실행 ID `FlowRunId`: `@{workflow()?['run']?['name']}`<br>실패 액션 `FailedAction`: `@{coalesce(first(body('Failed_actions'))?['name'], '')}`<br>오류 메시지 `ErrorMessage`: `@{coalesce(first(body('Failed_actions'))?['error']?['message'], '상세 메시지 없음(실행 기록 확인)')}`<br>심각도 `Severity` (선택 값): `Critical`<br>조치완료 `Resolved`: `false`(식 탭)<br>실행 기록 링크 `RunUrl`: `@{concat('https://make.powerautomate.com/environments/', workflow()?['tags']?['environmentName'], '/flows/', workflow()?['name'], '/runs/', workflow()?['run']?['name'])}` | 공통 오류 로그 기록 |
@@ -181,7 +310,7 @@
 
 | 단계 | 액션 이름(이름 바꾸기) | 추가할 액션 | 설정값 | 비고 |
 |---|---|---|---|---|
-| 1 | `Config` | 데이터 작업 › **작성(Compose)** | 입력(Inputs): `{"site": "{{SITE_URL}}", "me": "{{ME}}", "hostWorkbook": "{{HOST_WORKBOOK}}", "scriptFolder": "{{SCRIPT_FOLDER}}", "prototypeMode": true, "channel": "{{NOTIFY_CHANNEL}}", "links": {"myActions": "{{VIEW_MY_ACTIONS}}", "decisionQueue": "{{VIEW_DECISION_QUEUE}}", "candidates": "{{VIEW_CANDIDATES}}"}}` | 설정값 모음. 샌드박스→운영 전환 시 이 값만 바꾼다(트리거의 사이트·목록은 직접 다시 선택). |
+| 1 | `Config` | 데이터 작업 › **작성(Compose)** | 입력(Inputs): `{"site": "{{SITE_URL}}", "me": "{{ME}}", "hostWorkbook": "{{HOST_WORKBOOK}}", "scriptFolder": "{{SCRIPT_FOLDER}}", "prototypeMode": true, "channel": "{{NOTIFY_CHANNEL}}", "factoryFolder": "{{FACTORY_FOLDER}}", "links": {"myActions": "{{VIEW_MY_ACTIONS}}", "decisionQueue": "{{VIEW_DECISION_QUEUE}}", "candidates": "{{VIEW_CANDIDATES}}"}}` | 설정값 모음. 샌드박스→운영 전환 시 이 값만 바꾼다(트리거의 사이트·목록은 직접 다시 선택). |
 | 2 | `Today` | 데이터 작업 › **작성(Compose)** | 입력(Inputs): `@{convertFromUtc(utcNow(), 'Korea Standard Time', 'yyyy-MM-dd')}` | 오늘(KST) |
 | 3 | `DayStartUtc` | 데이터 작업 › **작성(Compose)** | 입력(Inputs): `@{convertToUtc(concat(outputs('Today'), 'T00:00:00'), 'Korea Standard Time')}` | 오늘 0시(KST)를 UTC로 |
 | 4 | `Try` | 컨트롤 › **범위(Scope)** | - |  |
@@ -197,13 +326,13 @@
 | 4.7.예 | 　　**'True(예)' 분기** | | | |
 | 4.7.예.1 | 　　`Post_card_teams` | Microsoft Teams › **Post card in a chat or channel** | 게시자(Post as): `Flow bot`<br>게시 위치(Post in): `Chat with Flow bot`<br>받는 사람(Recipient): `@{outputs('Config')?['me']}`<br>Adaptive Card: `@{body('Run_brief')?['result']?['cardJson']}` | Teams Flow bot 카드 |
 | 4.7.아니요 | 　　**'False(아니요)' 분기** | | | |
-| 4.7.아니요.1 | 　　`Post_card_email` | Office 365 Outlook › **Send an email (V2)** | 받는 사람(To): `@{outputs('Config')?['me']}`<br>제목(Subject): `@{concat('[아침 브리핑] ', outputs('Today'))}`<br>본문(Body): `@{body('Run_brief')?['result']?['htmlSummary']}` | 메일 알림(Workflows 앱 없을 때) |
+| 4.7.아니요.1 | 　　`Post_card_email` | Office 365 Outlook › **Send an email (V2)** | 받는 사람(To): `@{outputs('Config')?['me']}`<br>제목(Subject): `@{concat('[아침 브리핑] ', outputs('Today'))}`<br>본문(Body) / 파일 콘텐츠(File Content): `@{body('Run_brief')?['result']?['htmlSummary']}` | 메일 알림(Workflows 앱 없을 때) |
 | 5 | `Catch` | 컨트롤 › **범위(Scope)** | **실행 후 구성**: 'Try' 이(가) 실패함, 시간 초과됨 | 실행 후 구성: Try가 '실패함'·'시간 초과됨'일 때 |
 | 5.1 | 　`Failed_actions` | 데이터 작업 › **배열 필터링(Filter array)** | 보낸 사람(From): **fx** `result('Try')` · '고급 모드에서 편집' 후: `@equals(item()?['status'], 'Failed')` | Try 안에서 실패한 액션만 추림 |
 | 5.2 | 　`Log_error` | SharePoint › **Create item** | 사이트 주소(Site Address) — '사용자 지정 값 입력': `@{outputs('Config')?['site']}`<br>목록 이름(List Name) — '사용자 지정 값 입력': `FlowErrorLog`<br>Flow 이름 `Title`: `@{workflow()?['tags']?['flowDisplayName']}`<br>실행 ID `FlowRunId`: `@{workflow()?['run']?['name']}`<br>실패 액션 `FailedAction`: `@{coalesce(first(body('Failed_actions'))?['name'], '')}`<br>오류 메시지 `ErrorMessage`: `@{coalesce(first(body('Failed_actions'))?['error']?['message'], '상세 메시지 없음(실행 기록 확인)')}`<br>심각도 `Severity` (선택 값): `Critical`<br>조치완료 `Resolved`: `false`(식 탭)<br>실행 기록 링크 `RunUrl`: `@{concat('https://make.powerautomate.com/environments/', workflow()?['tags']?['environmentName'], '/flows/', workflow()?['name'], '/runs/', workflow()?['run']?['name'])}` | 공통 오류 로그 기록 |
 | 5.3 | 　`If_teams_failed` | 컨트롤 › **조건(Condition)** | 왼쪽 값: **fx** `and(equals(first(body('Failed_actions'))?['name'], 'Post_card'), equals(outputs('Config')?['channel'], 'teams'))` · 연산자 **같음(is equal to)** · 오른쪽 값: **fx** `true` | Teams 실패 시 대체 |
 | 5.3.예 | 　　**'True(예)' 분기** | | | |
-| 5.3.예.1 | 　　`Email_fallback` | Office 365 Outlook › **Send an email (V2)** | 받는 사람(To): `@{outputs('Config')?['me']}`<br>제목(Subject): `[아침 브리핑] Teams 게시 실패 — 메일로 대체`<br>본문(Body): `@{body('Run_brief')?['result']?['htmlSummary']}` | Teams 카드 실패 시 본인 메일로 대체 발송 |
+| 5.3.예.1 | 　　`Email_fallback` | Office 365 Outlook › **Send an email (V2)** | 받는 사람(To): `@{outputs('Config')?['me']}`<br>제목(Subject): `[아침 브리핑] Teams 게시 실패 — 메일로 대체`<br>본문(Body) / 파일 콘텐츠(File Content): `@{body('Run_brief')?['result']?['htmlSummary']}` | Teams 카드 실패 시 본인 메일로 대체 발송 |
 | 5.4 | 　`Terminate_failed` | 컨트롤 › **종료(Terminate)** | 상태: 실패함(Failed) · 코드 `FlowFailed` · 메시지 `@{concat('실패 액션: ', coalesce(first(body('Failed_actions'))?['name'], '?'))}`<br>**실행 후 구성**: 'If_teams_failed' 이(가) 성공함, 실패함, 건너뜀 |  |
 
 ## P3P-F7 액션 리마인더(담당자별 하루 1장)
@@ -218,7 +347,7 @@
 
 | 단계 | 액션 이름(이름 바꾸기) | 추가할 액션 | 설정값 | 비고 |
 |---|---|---|---|---|
-| 1 | `Config` | 데이터 작업 › **작성(Compose)** | 입력(Inputs): `{"site": "{{SITE_URL}}", "me": "{{ME}}", "hostWorkbook": "{{HOST_WORKBOOK}}", "scriptFolder": "{{SCRIPT_FOLDER}}", "prototypeMode": true, "channel": "{{NOTIFY_CHANNEL}}", "links": {"myActions": "{{VIEW_MY_ACTIONS}}", "decisionQueue": "{{VIEW_DECISION_QUEUE}}", "candidates": "{{VIEW_CANDIDATES}}"}}` | 설정값 모음. 샌드박스→운영 전환 시 이 값만 바꾼다(트리거의 사이트·목록은 직접 다시 선택). |
+| 1 | `Config` | 데이터 작업 › **작성(Compose)** | 입력(Inputs): `{"site": "{{SITE_URL}}", "me": "{{ME}}", "hostWorkbook": "{{HOST_WORKBOOK}}", "scriptFolder": "{{SCRIPT_FOLDER}}", "prototypeMode": true, "channel": "{{NOTIFY_CHANNEL}}", "factoryFolder": "{{FACTORY_FOLDER}}", "links": {"myActions": "{{VIEW_MY_ACTIONS}}", "decisionQueue": "{{VIEW_DECISION_QUEUE}}", "candidates": "{{VIEW_CANDIDATES}}"}}` | 설정값 모음. 샌드박스→운영 전환 시 이 값만 바꾼다(트리거의 사이트·목록은 직접 다시 선택). |
 | 2 | `Today` | 데이터 작업 › **작성(Compose)** | 입력(Inputs): `@{convertFromUtc(utcNow(), 'Korea Standard Time', 'yyyy-MM-dd')}` | 오늘(KST) |
 | 3 | `DayStartUtc` | 데이터 작업 › **작성(Compose)** | 입력(Inputs): `@{convertToUtc(concat(outputs('Today'), 'T00:00:00'), 'Korea Standard Time')}` | 오늘 0시(KST)를 UTC로 |
 | 4 | `Init_skipped` | 변수 › **변수 초기화(Initialize variable)** | 이름 `varSkipped`, 형식 Array, 값 `[]` |  |
@@ -236,7 +365,7 @@
 | 5.5.1.예.1.예 | 　　　　**'True(예)' 분기** | | | |
 | 5.5.1.예.1.예.1 | 　　　　`Post_digest_teams` | Microsoft Teams › **Post card in a chat or channel** | 게시자(Post as): `Flow bot`<br>게시 위치(Post in): `Chat with Flow bot`<br>받는 사람(Recipient): `@{items('For_each_digest')?['ownerEmail']}`<br>Adaptive Card: `@{items('For_each_digest')?['cardJson']}` | Teams Flow bot 카드 |
 | 5.5.1.예.1.아니요 | 　　　　**'False(아니요)' 분기** | | | |
-| 5.5.1.예.1.아니요.1 | 　　　　`Post_digest_email` | Office 365 Outlook › **Send an email (V2)** | 받는 사람(To): `@{items('For_each_digest')?['ownerEmail']}`<br>제목(Subject): `@{concat('[액션 리마인더] ', outputs('Today'))}`<br>본문(Body): `@{items('For_each_digest')?['htmlSummary']}` | 메일 알림(Workflows 앱 없을 때) |
+| 5.5.1.예.1.아니요.1 | 　　　　`Post_digest_email` | Office 365 Outlook › **Send an email (V2)** | 받는 사람(To): `@{items('For_each_digest')?['ownerEmail']}`<br>제목(Subject): `@{concat('[액션 리마인더] ', outputs('Today'))}`<br>본문(Body) / 파일 콘텐츠(File Content): `@{items('For_each_digest')?['htmlSummary']}` | 메일 알림(Workflows 앱 없을 때) |
 | 5.5.1.예.2 | 　　　`For_each_item` | 컨트롤 › **각각에 적용(Apply to each)** | 이전 단계에서 출력 선택: **fx** `items('For_each_digest')?['itemIds']` · 설정 › 동시성 제어 **켬, 병렬 처리 수준 1** | 알린 항목 기록 |
 | 5.5.1.예.2.1 | 　　　　`Get_action` | SharePoint › **Get item** | 사이트 주소(Site Address) — '사용자 지정 값 입력': `@{outputs('Config')?['site']}`<br>목록 이름(List Name) — '사용자 지정 값 입력': `ActionItems`<br>ID: **fx** `items('For_each_item')` | 현재 값 읽기(Update 필수 입력용) |
 | 5.5.1.예.2.2 | 　　　　`Mark_reminded` | SharePoint › **Update item** | 사이트 주소(Site Address) — '사용자 지정 값 입력': `@{outputs('Config')?['site']}`<br>목록 이름(List Name) — '사용자 지정 값 입력': `ActionItems`<br>ID: **fx** `items('For_each_item')`<br>할 일 `Title`: `@{body('Get_action')?['Title']}`<br>담당자 `Owner` (사람: 이메일): `@{body('Get_action')?['Owner']?['Claims']}`<br>상태 `Status` (선택 값): `@{body('Get_action')?['Status']?['Value']}`<br>유형 `ActionType` (선택 값): `@{body('Get_action')?['ActionType']?['Value']}`<br>리마인더 횟수 `ReminderCount`: **fx** `add(coalesce(body('Get_action')?['ReminderCount'], 0), 1)`<br>최근 리마인더 `LastRemindedAt`: `@{utcNow()}` | 리마인더 횟수·시각 기록 |
@@ -248,7 +377,7 @@
 | 5.6.예.1.예 | 　　　**'True(예)' 분기** | | | |
 | 5.6.예.1.예.1 | 　　　`Tell_skipped_teams` | Microsoft Teams › **Post message in a chat or channel** | 게시자(Post as): `Flow bot`<br>게시 위치(Post in): `Chat with Flow bot`<br>받는 사람(Recipient): `@{outputs('Config')?['me']}`<br>메시지(Message): `@{concat('프로토타입 모드: 다른 담당자 ', string(length(variables('varSkipped'))), '명에게는 발송하지 않았습니다.')}` | Teams Flow bot 메시지 |
 | 5.6.예.1.아니요 | 　　　**'False(아니요)' 분기** | | | |
-| 5.6.예.1.아니요.1 | 　　　`Tell_skipped_email` | Office 365 Outlook › **Send an email (V2)** | 받는 사람(To): `@{outputs('Config')?['me']}`<br>제목(Subject): `[P3 알림]`<br>본문(Body): `@{concat('프로토타입 모드: 다른 담당자 ', string(length(variables('varSkipped'))), '명에게는 발송하지 않았습니다.')}` | 메일 알림(Workflows 앱 없을 때) |
+| 5.6.예.1.아니요.1 | 　　　`Tell_skipped_email` | Office 365 Outlook › **Send an email (V2)** | 받는 사람(To): `@{outputs('Config')?['me']}`<br>제목(Subject): `[P3 알림]`<br>본문(Body) / 파일 콘텐츠(File Content): `@{concat('프로토타입 모드: 다른 담당자 ', string(length(variables('varSkipped'))), '명에게는 발송하지 않았습니다.')}` | 메일 알림(Workflows 앱 없을 때) |
 | 6 | `Catch` | 컨트롤 › **범위(Scope)** | **실행 후 구성**: 'Try' 이(가) 실패함, 시간 초과됨 | 실행 후 구성: Try가 '실패함'·'시간 초과됨'일 때 |
 | 6.1 | 　`Failed_actions` | 데이터 작업 › **배열 필터링(Filter array)** | 보낸 사람(From): **fx** `result('Try')` · '고급 모드에서 편집' 후: `@equals(item()?['status'], 'Failed')` | Try 안에서 실패한 액션만 추림 |
 | 6.2 | 　`Log_error` | SharePoint › **Create item** | 사이트 주소(Site Address) — '사용자 지정 값 입력': `@{outputs('Config')?['site']}`<br>목록 이름(List Name) — '사용자 지정 값 입력': `FlowErrorLog`<br>Flow 이름 `Title`: `@{workflow()?['tags']?['flowDisplayName']}`<br>실행 ID `FlowRunId`: `@{workflow()?['run']?['name']}`<br>실패 액션 `FailedAction`: `@{coalesce(first(body('Failed_actions'))?['name'], '')}`<br>오류 메시지 `ErrorMessage`: `@{coalesce(first(body('Failed_actions'))?['error']?['message'], '상세 메시지 없음(실행 기록 확인)')}`<br>심각도 `Severity` (선택 값): `Critical`<br>조치완료 `Resolved`: `false`(식 탭)<br>실행 기록 링크 `RunUrl`: `@{concat('https://make.powerautomate.com/environments/', workflow()?['tags']?['environmentName'], '/flows/', workflow()?['name'], '/runs/', workflow()?['run']?['name'])}` | 공통 오류 로그 기록 |
@@ -267,7 +396,7 @@
 
 | 단계 | 액션 이름(이름 바꾸기) | 추가할 액션 | 설정값 | 비고 |
 |---|---|---|---|---|
-| 1 | `Config` | 데이터 작업 › **작성(Compose)** | 입력(Inputs): `{"site": "{{SITE_URL}}", "me": "{{ME}}", "hostWorkbook": "{{HOST_WORKBOOK}}", "scriptFolder": "{{SCRIPT_FOLDER}}", "prototypeMode": true, "channel": "{{NOTIFY_CHANNEL}}", "links": {"myActions": "{{VIEW_MY_ACTIONS}}", "decisionQueue": "{{VIEW_DECISION_QUEUE}}", "candidates": "{{VIEW_CANDIDATES}}"}}` | 설정값 모음. 샌드박스→운영 전환 시 이 값만 바꾼다(트리거의 사이트·목록은 직접 다시 선택). |
+| 1 | `Config` | 데이터 작업 › **작성(Compose)** | 입력(Inputs): `{"site": "{{SITE_URL}}", "me": "{{ME}}", "hostWorkbook": "{{HOST_WORKBOOK}}", "scriptFolder": "{{SCRIPT_FOLDER}}", "prototypeMode": true, "channel": "{{NOTIFY_CHANNEL}}", "factoryFolder": "{{FACTORY_FOLDER}}", "links": {"myActions": "{{VIEW_MY_ACTIONS}}", "decisionQueue": "{{VIEW_DECISION_QUEUE}}", "candidates": "{{VIEW_CANDIDATES}}"}}` | 설정값 모음. 샌드박스→운영 전환 시 이 값만 바꾼다(트리거의 사이트·목록은 직접 다시 선택). |
 | 2 | `Try` | 컨트롤 › **범위(Scope)** | - |  |
 | 2.1 | 　`Get_roster` | SharePoint › **Get items** | 사이트 주소(Site Address) — '사용자 지정 값 입력': `@{outputs('Config')?['site']}`<br>목록 이름(List Name) — '사용자 지정 값 입력': `TeamRoster`<br>상위 개수(Top Count): `500` | 팀 명부(담당자 매핑 근거) |
 | 2.2 | 　`Run_guard` | Excel Online (Business) › **Run script from SharePoint library** | 통합 문서(Workbook) 위치·파일: `@{outputs('Config')?['hostWorkbook']}`<br>스크립트(Script) 위치·파일: `@{outputs('Config')?['scriptFolder']}/GuardExtraction.osts`<br>매개변수 `transcript`: `@{triggerOutputs()?['body/Transcript']}`<br>매개변수 `rosterJson`: `@{string(body('Get_roster')?['value'])}`<br>매개변수 `extractionJson`: `@{triggerOutputs()?['body/ExtractionJson']}`<br>매개변수 `meetingDate`: `@{formatDateTime(triggerOutputs()?['body/MeetingDate'], 'yyyy-MM-dd')}` | G1~G6 검증(Office Scripts) |
@@ -283,14 +412,14 @@
 | 2.5.예.3.예 | 　　　**'True(예)' 분기** | | | |
 | 2.5.예.3.예.1 | 　　　`Tell_candidates_teams` | Microsoft Teams › **Post message in a chat or channel** | 게시자(Post as): `Flow bot`<br>게시 위치(Post in): `Chat with Flow bot`<br>받는 사람(Recipient): `@{outputs('Config')?['me']}`<br>메시지(Message): `@{concat('회의 "', triggerOutputs()?['body/Title'], '" 후보 ', string(length(body('Run_guard')?['result']?['candidates'])), '건(추천 ', string(body('Run_guard')?['result']?['recommendedCount']), ') — 확인 후 승인하세요: ', outputs('Config')?['links']?['candidates'])}` | Teams Flow bot 메시지 |
 | 2.5.예.3.아니요 | 　　　**'False(아니요)' 분기** | | | |
-| 2.5.예.3.아니요.1 | 　　　`Tell_candidates_email` | Office 365 Outlook › **Send an email (V2)** | 받는 사람(To): `@{outputs('Config')?['me']}`<br>제목(Subject): `[P3 알림]`<br>본문(Body): `@{concat('회의 "', triggerOutputs()?['body/Title'], '" 후보 ', string(length(body('Run_guard')?['result']?['candidates'])), '건(추천 ', string(body('Run_guard')?['result']?['recommendedCount']), ') — 확인 후 승인하세요: ', outputs('Config')?['links']?['candidates'])}` | 메일 알림(Workflows 앱 없을 때) |
+| 2.5.예.3.아니요.1 | 　　　`Tell_candidates_email` | Office 365 Outlook › **Send an email (V2)** | 받는 사람(To): `@{outputs('Config')?['me']}`<br>제목(Subject): `[P3 알림]`<br>본문(Body) / 파일 콘텐츠(File Content): `@{concat('회의 "', triggerOutputs()?['body/Title'], '" 후보 ', string(length(body('Run_guard')?['result']?['candidates'])), '건(추천 ', string(body('Run_guard')?['result']?['recommendedCount']), ') — 확인 후 승인하세요: ', outputs('Config')?['links']?['candidates'])}` | 메일 알림(Workflows 앱 없을 때) |
 | 2.5.아니요 | 　　**'False(아니요)' 분기** | | | |
 | 2.5.아니요.1 | 　　`Mark_intake_error` | SharePoint › **Update item** | 사이트 주소(Site Address) — '사용자 지정 값 입력': `@{outputs('Config')?['site']}`<br>목록 이름(List Name) — '사용자 지정 값 입력': `MeetingIntake`<br>ID: **fx** `triggerOutputs()?['body/ID']`<br>회의명 `Title`: `@{triggerOutputs()?['body/Title']}`<br>회의일 `MeetingDate`: `@{triggerOutputs()?['body/MeetingDate']}`<br>회의록 원문 `Transcript`: `@{triggerOutputs()?['body/Transcript']}`<br>Copilot 추출 결과 `ExtractionJson`: `@{triggerOutputs()?['body/ExtractionJson']}`<br>처리 상태 `Status` (선택 값): `오류`<br>검증 요약 `ResultSummary`: `@{body('Run_guard')?['result']?['parseError']}`<br>처리 시각 `ProcessedAt`: `@{utcNow()}` | 오류 표시 |
 | 2.5.아니요.2 | 　　`Tell_parse_error` | 컨트롤 › **조건(Condition)** | 왼쪽 값: **fx** `equals(outputs('Config')?['channel'], 'teams')` · 연산자 **같음(is equal to)** · 오른쪽 값: **fx** `true` | 본인에게 알림(Teams 메시지 또는 메일) — 설정 channel 이 teams 면 Teams, 아니면 메일 |
 | 2.5.아니요.2.예 | 　　　**'True(예)' 분기** | | | |
 | 2.5.아니요.2.예.1 | 　　　`Tell_parse_error_teams` | Microsoft Teams › **Post message in a chat or channel** | 게시자(Post as): `Flow bot`<br>게시 위치(Post in): `Chat with Flow bot`<br>받는 사람(Recipient): `@{outputs('Config')?['me']}`<br>메시지(Message): `@{concat('회의 "', triggerOutputs()?['body/Title'], '" 추출 결과를 읽지 못했습니다: ', body('Run_guard')?['result']?['parseError'])}` | Teams Flow bot 메시지 |
 | 2.5.아니요.2.아니요 | 　　　**'False(아니요)' 분기** | | | |
-| 2.5.아니요.2.아니요.1 | 　　　`Tell_parse_error_email` | Office 365 Outlook › **Send an email (V2)** | 받는 사람(To): `@{outputs('Config')?['me']}`<br>제목(Subject): `[P3 알림]`<br>본문(Body): `@{concat('회의 "', triggerOutputs()?['body/Title'], '" 추출 결과를 읽지 못했습니다: ', body('Run_guard')?['result']?['parseError'])}` | 메일 알림(Workflows 앱 없을 때) |
+| 2.5.아니요.2.아니요.1 | 　　　`Tell_parse_error_email` | Office 365 Outlook › **Send an email (V2)** | 받는 사람(To): `@{outputs('Config')?['me']}`<br>제목(Subject): `[P3 알림]`<br>본문(Body) / 파일 콘텐츠(File Content): `@{concat('회의 "', triggerOutputs()?['body/Title'], '" 추출 결과를 읽지 못했습니다: ', body('Run_guard')?['result']?['parseError'])}` | 메일 알림(Workflows 앱 없을 때) |
 | 3 | `Catch` | 컨트롤 › **범위(Scope)** | **실행 후 구성**: 'Try' 이(가) 실패함, 시간 초과됨 | 실행 후 구성: Try가 '실패함'·'시간 초과됨'일 때 |
 | 3.1 | 　`Failed_actions` | 데이터 작업 › **배열 필터링(Filter array)** | 보낸 사람(From): **fx** `result('Try')` · '고급 모드에서 편집' 후: `@equals(item()?['status'], 'Failed')` | Try 안에서 실패한 액션만 추림 |
 | 3.2 | 　`Log_error` | SharePoint › **Create item** | 사이트 주소(Site Address) — '사용자 지정 값 입력': `@{outputs('Config')?['site']}`<br>목록 이름(List Name) — '사용자 지정 값 입력': `FlowErrorLog`<br>Flow 이름 `Title`: `@{workflow()?['tags']?['flowDisplayName']}`<br>실행 ID `FlowRunId`: `@{workflow()?['run']?['name']}`<br>실패 액션 `FailedAction`: `@{coalesce(first(body('Failed_actions'))?['name'], '')}`<br>오류 메시지 `ErrorMessage`: `@{coalesce(first(body('Failed_actions'))?['error']?['message'], '상세 메시지 없음(실행 기록 확인)')}`<br>심각도 `Severity` (선택 값): `Critical`<br>조치완료 `Resolved`: `false`(식 탭)<br>실행 기록 링크 `RunUrl`: `@{concat('https://make.powerautomate.com/environments/', workflow()?['tags']?['environmentName'], '/flows/', workflow()?['name'], '/runs/', workflow()?['run']?['name'])}` | 공통 오류 로그 기록 |
@@ -310,7 +439,7 @@
 
 | 단계 | 액션 이름(이름 바꾸기) | 추가할 액션 | 설정값 | 비고 |
 |---|---|---|---|---|
-| 1 | `Config` | 데이터 작업 › **작성(Compose)** | 입력(Inputs): `{"site": "{{SITE_URL}}", "me": "{{ME}}", "hostWorkbook": "{{HOST_WORKBOOK}}", "scriptFolder": "{{SCRIPT_FOLDER}}", "prototypeMode": true, "channel": "{{NOTIFY_CHANNEL}}", "links": {"myActions": "{{VIEW_MY_ACTIONS}}", "decisionQueue": "{{VIEW_DECISION_QUEUE}}", "candidates": "{{VIEW_CANDIDATES}}"}}` | 설정값 모음. 샌드박스→운영 전환 시 이 값만 바꾼다(트리거의 사이트·목록은 직접 다시 선택). |
+| 1 | `Config` | 데이터 작업 › **작성(Compose)** | 입력(Inputs): `{"site": "{{SITE_URL}}", "me": "{{ME}}", "hostWorkbook": "{{HOST_WORKBOOK}}", "scriptFolder": "{{SCRIPT_FOLDER}}", "prototypeMode": true, "channel": "{{NOTIFY_CHANNEL}}", "factoryFolder": "{{FACTORY_FOLDER}}", "links": {"myActions": "{{VIEW_MY_ACTIONS}}", "decisionQueue": "{{VIEW_DECISION_QUEUE}}", "candidates": "{{VIEW_CANDIDATES}}"}}` | 설정값 모음. 샌드박스→운영 전환 시 이 값만 바꾼다(트리거의 사이트·목록은 직접 다시 선택). |
 | 2 | `Try` | 컨트롤 › **범위(Scope)** | - |  |
 | 2.1 | 　`Recheck` | SharePoint › **Get item** | 사이트 주소(Site Address) — '사용자 지정 값 입력': `@{outputs('Config')?['site']}`<br>목록 이름(List Name) — '사용자 지정 값 입력': `ActionCandidates`<br>ID: **fx** `triggerOutputs()?['body/ID']` | 최신 값 재확인(동시 수정·중복 실행 방어) |
 | 2.2 | 　`If_already` | 컨트롤 › **조건(Condition)** | 왼쪽 값: **fx** `not(and(equals(body('Recheck')?['Status']?['Value'], '승인'), empty(body('Recheck')?['CreatedItemID'])))` · 연산자 **같음(is equal to)** · 오른쪽 값: **fx** `true` |  |

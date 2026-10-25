@@ -143,6 +143,14 @@
           "default": "수동"
         },
         {
+          "internalName": "DueHint",
+          "displayName": "기한 근거",
+          "type": "Text",
+          "required": false,
+          "setBy": "flow",
+          "note": "메일 문구에서 추정한 기한의 근거(P3P-F13)"
+        },
+        {
           "internalName": "SourceMessageId",
           "displayName": "원본 메시지 ID(시스템)",
           "type": "Text",
@@ -155,6 +163,14 @@
         {
           "internalName": "PrevStatus",
           "displayName": "이전 상태(시스템)",
+          "type": "Text",
+          "required": false,
+          "setBy": "flow",
+          "hidden": true
+        },
+        {
+          "internalName": "DueHintChecked",
+          "displayName": "기한 추정 완료(시스템)",
           "type": "Text",
           "required": false,
           "setBy": "flow",
@@ -600,6 +616,104 @@
         }
       ],
       "permissions": "팀장 편집 / 팀원 읽기"
+    },
+    {
+      "name": "FactorySenders",
+      "displayName": "공장 발신자(설정)",
+      "purpose": "공장 자료 메일로 볼 발신자 목록. 이메일 주소 전체 또는 '@도메인' 일부를 적는다. 여기에 없는 발신자의 메일은 저장하지 않는다.",
+      "columns": [
+        {
+          "internalName": "Title",
+          "displayName": "공장명",
+          "type": "Text",
+          "required": true
+        },
+        {
+          "internalName": "PlantCode",
+          "displayName": "공장코드(폴더명)",
+          "type": "Text",
+          "required": true
+        },
+        {
+          "internalName": "SenderPattern",
+          "displayName": "발신자(주소 또는 @도메인)",
+          "type": "Text",
+          "required": true
+        }
+      ],
+      "permissions": "본인(프로토타입) → SCM 팀 편집"
+    },
+    {
+      "name": "FactoryInbox",
+      "displayName": "공장 자료 수신 대장",
+      "versioning": true,
+      "purpose": "공장 발신 첨부 메일 1통 = 1행. 첨부(Excel·CSV)는 OneDrive '공장코드/날짜' 폴더에 자동 저장된다. 수신 패턴 분석(Pilot 02 재설계)의 원천.",
+      "columns": [
+        {
+          "internalName": "Title",
+          "displayName": "메일 제목",
+          "type": "Text",
+          "required": true
+        },
+        {
+          "internalName": "PlantCode",
+          "displayName": "공장코드",
+          "type": "Text",
+          "required": true,
+          "indexed": true
+        },
+        {
+          "internalName": "Sender",
+          "displayName": "발신자",
+          "type": "Text",
+          "required": false
+        },
+        {
+          "internalName": "ReceivedAt",
+          "displayName": "수신 시각",
+          "type": "DateTime",
+          "required": true,
+          "indexed": true
+        },
+        {
+          "internalName": "FileCount",
+          "displayName": "저장 파일 수",
+          "type": "Number",
+          "required": false
+        },
+        {
+          "internalName": "FileNames",
+          "displayName": "파일 이름",
+          "type": "Note",
+          "required": false
+        },
+        {
+          "internalName": "SavedFolder",
+          "displayName": "저장 폴더",
+          "type": "Text",
+          "required": false
+        },
+        {
+          "internalName": "SourceMessageId",
+          "displayName": "원본 메시지 ID(시스템)",
+          "type": "Text",
+          "required": false,
+          "indexed": true,
+          "hidden": true
+        }
+      ],
+      "views": [
+        {
+          "name": "최근 수신",
+          "sort": "ReceivedAt desc"
+        },
+        {
+          "name": "공장별",
+          "type": "Board",
+          "groupBy": "PlantCode"
+        }
+      ],
+      "permissions": "본인(프로토타입) → SCM 팀 읽기"
     },
     {
       "name": "Holidays",

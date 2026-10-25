@@ -24,6 +24,7 @@
         "scriptFolder": "{{SCRIPT_FOLDER}}",
         "prototypeMode": true,
         "channel": "{{NOTIFY_CHANNEL}}",
+        "factoryFolder": "{{FACTORY_FOLDER}}",
         "links": {
           "myActions": "{{VIEW_MY_ACTIONS}}",
           "decisionQueue": "{{VIEW_DECISION_QUEUE}}",

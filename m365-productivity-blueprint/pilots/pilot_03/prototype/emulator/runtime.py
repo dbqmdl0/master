@@ -64,8 +64,9 @@ class Flow:
 
 
 class Runtime:
-    def __init__(self, sp, outlook, teams, excel, users, clock):
+    def __init__(self, sp, outlook, teams, excel, users, clock, onedrive=None):
         self.sp, self.outlook, self.teams, self.excel, self.users, self.clock = sp, outlook, teams, excel, users, clock
+        self.onedrive = onedrive
         self.flows: list[Flow] = []
         self.runs: list[Run] = []
         self._ids = itertools.count(1)
@@ -316,6 +317,8 @@ class Runtime:
                 return self.teams.post_message(user, i["poster"], i["recipient"], i["message"])
         if connector == "Excel Online (Business)" and op == "Run script from SharePoint library":
             return self.excel.run_script(user, i["workbook"], i["script"], i["parameters"])
+        if connector == "OneDrive for Business" and op == "Create file":
+            return self.onedrive.create_file(user, i["folderPath"], i["name"], i["body"])
         if connector == "Office 365 Users" and op == "Get user profile (V2)":
             return self.users.profile(user, i["user"])
         raise DefinitionError(f"지원하지 않는 커넥터 작업: {connector} / {op}")

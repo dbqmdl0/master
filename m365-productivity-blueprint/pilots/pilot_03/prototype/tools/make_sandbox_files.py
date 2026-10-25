@@ -28,6 +28,9 @@ ROWS = {
                    for p in json.loads((SAMPLES / "roster.json").read_text(encoding="utf-8"))],
     "Holidays": [{"Title": "[샘플-회사 달력으로 교체] 한글날", "HolidayDate": "2026-10-09"},
                  {"Title": "[샘플-회사 달력으로 교체] 성탄절", "HolidayDate": "2026-12-25"}],
+    "FactorySenders": [{"Title": "[가상] A공장", "PlantCode": "PLT-A", "SenderPattern": "@plta.example.com"},
+                       {"Title": "[가상] 해외-1 법인", "PlantCode": "OVS-1", "SenderPattern": "planner@ovs1.example.com"}],
+    "FactoryInbox": [],
     "MeetingIntake": [],
     "ActionCandidates": [],
     "FlowErrorLog": [],
@@ -81,6 +84,20 @@ def smoke():
                                 "actionsJson": json.dumps([{"ID": 1, "ActionID": "ACT-2026-00001", "Title": "[가상] 초과 건", "DueDate": "2026-10-23",
                                                             "Status": {"Value": "미착수"}, "Owner": {"Email": ME}}], ensure_ascii=False)},
     }
+    cases["ParseDueHint"] = {"text": "[긴급] PLT-B 11월 CAPA 확인 요청 내일까지 회신 부탁드립니다", "receivedKst": "2026-10-26",
+                             "holidaysJson": "[]"}
+    cases["BuildMeetingPrep"] = {"meEmail": ME, "todayKst": "2026-10-26", "holidaysJson": "[]",
+                                 "eventsJson": json.dumps([{"subject": "[가상] 주간 공급 조정", "start": "2026-10-27T00:30:00.0000000",
+                                                            "end": "2026-10-27T01:30:00.0000000", "organizer": ME,
+                                                            "requiredAttendees": "doyun.park@example.com;"}], ensure_ascii=False),
+                                 "actionsJson": json.dumps([{"ActionID": "ACT-2026-00002", "Title": "[가상] 이월 수량 안내", "DueDate": "2026-10-23",
+                                                             "Status": {"Value": "미착수"}, "Owner": {"Email": "doyun.park@example.com"}}], ensure_ascii=False),
+                                 "decisionsJson": "[]"}
+    cases["BuildWeeklyDigest"] = {"meEmail": ME, "todayKst": "2026-10-30", "decisionsJson": "[]",
+                                  "actionsJson": json.dumps([{"ActionID": "ACT-2026-00001", "Title": "[가상] 완료 건", "Status": {"Value": "완료"},
+                                                              "CompletedAt": "2026-10-28T05:00:00Z", "Created": "2026-10-26T00:00:00Z",
+                                                              "Owner": {"Email": ME}}], ensure_ascii=False),
+                                  "inboxJson": json.dumps([{"PlantCode": "PLT-A", "FileCount": 2, "ReceivedAt": "2026-10-27T01:00:00Z"}])}
     out = ROOT / "sandbox" / "smoke"
     out.mkdir(parents=True, exist_ok=True)
     for name, params in cases.items():

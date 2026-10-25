@@ -1,0 +1,7 @@
+{
+  "meEmail": "seoyeon.han@example.com",
+  "todayKst": "2026-10-30",
+  "decisionsJson": "[]",
+  "actionsJson": "[{\"ActionID\": \"ACT-2026-00001\", \"Title\": \"[가상] 완료 건\", \"Status\": {\"Value\": \"완료\"}, \"CompletedAt\": \"2026-10-28T05:00:00Z\", \"Created\": \"2026-10-26T00:00:00Z\", \"Owner\": {\"Email\": \"seoyeon.han@example.com\"}}]",
+  "inboxJson": "[{\"PlantCode\": \"PLT-A\", \"FileCount\": 2, \"ReceivedAt\": \"2026-10-27T01:00:00Z\"}]"
+}

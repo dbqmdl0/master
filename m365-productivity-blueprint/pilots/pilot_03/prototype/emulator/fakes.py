@@ -393,3 +393,27 @@ class FakeExcel:
         if not out["ok"]:
             raise ConnectorError(400, "ScriptError", out["error"])
         return {"result": out["result"], "logs": []}
+
+
+class FakeOneDrive:
+    """OneDrive for Business 'Create file'. 같은 경로에 같은 이름이 있으면 409(덮어쓰기 금지 가정)."""
+    MAX_BYTES = 100 * 1024 * 1024
+
+    def __init__(self, faults: Faults):
+        self.faults = faults
+        self.files: dict[str, dict] = {}
+
+    def create_file(self, user, folder, name, content):
+        self.faults.check("OneDrive for Business", "Create file", None)
+        if not folder or not name:
+            raise ConnectorError(400, "InvalidPath", "폴더 또는 파일 이름이 비었습니다")
+        if any(ch in name for ch in '\\/:*?"<>|'):
+            raise ConnectorError(400, "InvalidName", f"파일 이름에 쓸 수 없는 문자: {name}")
+        path = f"{folder.rstrip('/')}/{name}"
+        if path in self.files:
+            raise ConnectorError(409, "NameAlreadyExists", f"이미 있는 파일: {path}")
+        size = len(content.get("$binary", "")) * 3 // 4 if isinstance(content, dict) else len(str(content))
+        if size > self.MAX_BYTES:
+            raise ConnectorError(413, "TooLarge", "파일 크기 한도 초과")
+        self.files[path] = {"owner": user, "size": size}
+        return {"Id": path, "Name": name, "Path": path}

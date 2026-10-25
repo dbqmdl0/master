@@ -17,6 +17,7 @@ T = "triggerOutputs()?['body/{}']"
 CONFIG = {"type": "Compose", "note": "설정값 모음. 샌드박스→운영 전환 시 이 값만 바꾼다(트리거의 사이트·목록은 직접 다시 선택).",
           "inputs": {"site": SITE, "me": "{{ME}}", "hostWorkbook": "{{HOST_WORKBOOK}}",
                      "scriptFolder": "{{SCRIPT_FOLDER}}", "prototypeMode": True, "channel": "{{NOTIFY_CHANNEL}}",
+                     "factoryFolder": "{{FACTORY_FOLDER}}",
                      "links": {"myActions": "{{VIEW_MY_ACTIONS}}", "decisionQueue": "{{VIEW_DECISION_QUEUE}}",
                                "candidates": "{{VIEW_CANDIDATES}}"}}}
 CFG = "outputs('Config')"
@@ -450,6 +451,135 @@ def build() -> list[dict]:
             "Verdict/Value": f"@{{{t('Verdict/Value')}}}", "Status/Value": "오류",
             "Reasons": f"@{{concat(coalesce({t('Reasons')}, ''), ' / 등록 실패: ', coalesce(first(body('Failed_actions'))?['error']?['message'], first(body('Failed_actions'))?['name']))}}"})},
         purpose="사람이 ActionCandidates에서 '승인'으로 바꾼 후보만 등록. 최신 값 재확인으로 중복 등록 방지, 실패 시 후보에 사유 표시."))
+
+    # ---------------- 추가 기능(2026-10-26): 02_ADDITIONAL_AUTOMATIONS.md ----------------
+    weekdays = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]
+    msg_q = f"replace({t('id')}, '''', '''''')"
+    recv_day = f"convertFromUtc({t('receivedDateTime')}, 'Korea Standard Time', 'yyyy-MM-dd')"
+    flows.append(flow(
+        "P3P-F10", "P3P-F10 공장 자료 메일 → 첨부 자동 저장·수신 대장",
+        {"kind": "Outlook.WhenANewEmailArrivesV3",
+         "inputs": {"folder": "Inbox", "includeAttachments": True, "onlyWithAttachments": True}, "concurrency": 1},
+        {
+            "Get_senders": sp("Get items", "FactorySenders", "공장 발신자 설정", top=500),
+            "Match_sender": {"type": "FilterArray", "note": "발신자가 공장 발신자 목록에 있는지",
+                             "inputs": {"from": "@body('Get_senders')?['value']",
+                                        "where": f"@contains(toLower(coalesce({t('from')}, '')), toLower(item()?['SenderPattern']))"}},
+            "If_not_factory": iff("@equals(length(body('Match_sender')), 0)",
+                                  {"Stop_not_factory": terminate("Succeeded", "NotFactory", "공장 발신 메일 아님")},
+                                  note="공장 메일이 아니면 즉시 종료(대부분의 메일은 여기서 끝)"),
+            "Find_existing": sp("Get items", "FactoryInbox", "같은 메일 중복 저장 방지",
+                                filter=f"SourceMessageId eq '@{{{msg_q}}}'", top=1),
+            "If_duplicate": iff("@greater(length(body('Find_existing')?['value']), 0)",
+                                {"Stop_duplicate": terminate("Succeeded", "Duplicate", "이미 저장된 메일")}),
+            "Excel_files": {"type": "FilterArray", "note": "Excel·CSV 첨부만 저장",
+                            "inputs": {"from": f"@coalesce({t('attachments')}, createArray())",
+                                       "where": "@or(endsWith(item()?['name'], '.xlsx'), endsWith(item()?['name'], '.xlsm'), endsWith(item()?['name'], '.xls'), endsWith(item()?['name'], '.csv'))"}},
+            "If_no_excel": iff("@equals(length(body('Excel_files')), 0)",
+                               {"Stop_no_excel": terminate("Succeeded", "NoExcel", "Excel·CSV 첨부 없음")}),
+            "Folder": {"type": "Compose", "note": "저장 폴더: 기본 폴더/공장코드/수신일(KST)",
+                       "inputs": f"@{{concat({CFG}?['factoryFolder'], '/', first(body('Match_sender'))?['PlantCode'], '/', {recv_day})}}"},
+            "Save_files": {"type": "Foreach", "foreach": "@body('Excel_files')", "note": "첨부마다 저장(파일 이름 앞에 수신 시각)", "actions": {
+                "Create_file": {"type": "Connector", "connector": "OneDrive for Business", "operation": "Create file",
+                                "note": "OneDrive에 저장", "runAfter": {},
+                                "inputs": {"folderPath": "@{outputs('Folder')}",
+                                           "name": f"@{{concat(convertFromUtc({t('receivedDateTime')}, 'Korea Standard Time', 'HHmm'), '_', items('Save_files')?['name'])}}",
+                                           "body": "@base64ToBinary(items('Save_files')?['contentBytes'])"}}}},
+            "File_names": {"type": "Select", "note": "저장한 파일 이름 목록",
+                           "inputs": {"from": "@body('Excel_files')", "select": "@item()?['name']"}},
+            "Log_inbox": sp("Create item", "FactoryInbox", "수신 대장 기록", item={
+                "Title": f"@{{if(empty({t('subject')}), '(제목 없음)', if(greater(length({t('subject')}), 250), substring({t('subject')}, 0, 250), {t('subject')}))}}",
+                "PlantCode": "@{first(body('Match_sender'))?['PlantCode']}",
+                "Sender": f"@{{coalesce({t('from')}, '')}}",
+                "ReceivedAt": f"@{{{t('receivedDateTime')}}}",
+                "FileCount": "@length(body('Excel_files'))",
+                "FileNames": "@{join(body('File_names'), ', ')}",
+                "SavedFolder": "@{outputs('Folder')}",
+                "SourceMessageId": f"@{{{t('id')}}}"}),
+        },
+        purpose="공장 발신자(FactorySenders)의 첨부 메일이 오면 Excel·CSV 첨부를 OneDrive '공장코드/날짜' 폴더에 자동 저장하고 수신 대장에 기록. 다운로드·이름 바꾸기·폴더 정리·수신 확인 제거, 수신 패턴 자동 축적."))
+
+    pre_day = {"Today": {"type": "Compose", "inputs": f"@{{{today}}}", "note": "오늘(KST)"},
+               "DayStartUtc": {"type": "Compose", "inputs": "@{convertToUtc(concat(outputs('Today'), 'T00:00:00'), 'Korea Standard Time')}",
+                               "note": "오늘 0시(KST)를 UTC로"}}
+    prep = "body('Run_prep')?['result']"
+    flows.append(flow(
+        "P3P-F11", "P3P-F11 다음 영업일 회의 준비 메일",
+        {"kind": "Recurrence", "recurrence": {"frequency": "Week", "interval": 1, "timeZone": "Korea Standard Time",
+                                             "schedule": {"weekDays": weekdays, "hours": [16], "minutes": [30]}}},
+        {
+            "Get_holidays": sp("Get items", "Holidays", "휴무일", top=500),
+            "Get_events": {"type": "Connector", "connector": "Office 365 Outlook", "operation": "Get calendar view of events (V3)",
+                           "inputs": {"calendarId": "Calendar", "startTime": "@{addDays(outputs('DayStartUtc'), 1)}",
+                                      "endTime": "@{addDays(outputs('DayStartUtc'), 5)}"},
+                           "note": "내일~4일 뒤 일정(주말·휴무 건너 다음 영업일을 스크립트가 고름)"},
+            "Get_open_actions": sp("Get items", "ActionItems", "미결 할 일(전체 담당자)",
+                                   filter="Status eq '미착수' or Status eq '진행중'", top=2000),
+            "Get_decisions": sp("Get items", "DecisionLog", "결정 대기 + 최근 14일 확정",
+                                filter="Status eq '결정요청' or (Status eq '확정' and DecidedAt ge '@{addDays(outputs('Today'), -14, 'yyyy-MM-dd')}')",
+                                top=1000),
+            "Run_prep": script("BuildMeetingPrep", {
+                "meEmail": f"@{{{CFG}?['me']}}", "todayKst": "@{outputs('Today')}",
+                "eventsJson": "@{string(body('Get_events')?['value'])}",
+                "actionsJson": "@{string(body('Get_open_actions')?['value'])}",
+                "decisionsJson": "@{string(body('Get_decisions')?['value'])}",
+                "holidaysJson": "@{string(body('Get_holidays')?['value'])}"}, "회의별 참석자 기준 자료 정리(Office Scripts)"),
+            "If_skip": iff(f"@equals({prep}?['skip'], true)",
+                           {"Stop_skip": terminate("Succeeded", "Skip", f"@{{{prep}?['reason']}}")},
+                           note="회의가 없거나 휴무일이면 보내지 않음"),
+            "Send_prep": msg_to_me(f"@{{{prep}?['htmlSummary']}}",
+                                   subject=f"@{{concat('[회의 준비] ', {prep}?['targetDate'], ' · ', string({prep}?['meetingCount']), '건')}}"),
+        },
+        pre=pre_day,
+        purpose="평일 16:30, 다음 영업일 회의마다 참석자의 미결 할 일·결정 대기·최근 결정과 안건 제안을 본인에게 메일 1통으로."))
+
+    wk = "body('Run_weekly')?['result']"
+    flows.append(flow(
+        "P3P-F12", "P3P-F12 주간 정리(주간보고 초안)",
+        {"kind": "Recurrence", "recurrence": {"frequency": "Week", "interval": 1, "timeZone": "Korea Standard Time",
+                                             "schedule": {"weekDays": ["Friday"], "hours": [16], "minutes": [0]}}},
+        {
+            "Get_my_actions": sp("Get items", "ActionItems", "내 미결 + 최근 35일 변경",
+                                 filter=f"Owner/EMail eq '@{{{CFG}?['me']}}' and (Status eq '미착수' or Status eq '진행중' or Modified ge '@{{outputs('Since')}}')",
+                                 top=2000),
+            "Get_decisions": sp("Get items", "DecisionLog", "결정 대기 + 최근 35일 변경",
+                                filter="Status eq '결정요청' or Modified ge '@{outputs('Since')}'", top=1000),
+            "Get_inbox": sp("Get items", "FactoryInbox", "최근 35일 공장 자료 수신", filter="ReceivedAt ge '@{outputs('Since')}'", top=2000),
+            "Run_weekly": script("BuildWeeklyDigest", {
+                "meEmail": f"@{{{CFG}?['me']}}", "todayKst": "@{outputs('Today')}",
+                "actionsJson": "@{string(body('Get_my_actions')?['value'])}",
+                "decisionsJson": "@{string(body('Get_decisions')?['value'])}",
+                "inboxJson": "@{string(body('Get_inbox')?['value'])}"}, "주간 집계·초안 생성(Office Scripts)"),
+            "Send_weekly": msg_to_me(f"@{{{wk}?['htmlSummary']}}", subject=f"@{{concat('[주간 정리] ', {wk}?['week'], ' 초안')}}"),
+        },
+        pre={"Today": pre_day["Today"], "Since": {"type": "Compose", "inputs": "@{addDays(outputs('Today'), -35, 'yyyy-MM-dd')}",
+                                                  "note": "조회 시작일(35일 전)"}},
+        purpose="금요일 16:00 이번 주 완료·신규·기한초과·결정·회신 대기·공장 자료 수신 패턴을 자동 집계한 주간보고 초안을 본인에게."))
+
+    rk = "body('Recheck')"
+    hint = "body('Run_hint')?['result']"
+    flows.append(flow(
+        "P3P-F13", "P3P-F13 메일 문구로 기한 자동 제안",
+        {"kind": "SharePoint.WhenAnItemIsCreatedOrModified", "inputs": {"site": SITE, "list": "ActionItems"},
+         "conditions": [f"@and(empty({t('DueDate')}), empty({t('DueHintChecked')}), equals({t('CreatedVia/Value')}, 'Outlook 플래그'))"]},
+        {
+            "Recheck": sp("Get item", "ActionItems", "최신 값 재확인(중복 실행 방어)", id=f"@{t('ID')}"),
+            "If_already": iff(f"@not(and(empty({rk}?['DueDate']), empty({rk}?['DueHintChecked'])))",
+                              {"Stop_already": terminate("Succeeded", "AlreadyHandled", "이미 기한이 있거나 추정 완료")}),
+            "Get_holidays": sp("Get items", "Holidays", "휴무일(내일·모레 계산용)", top=500),
+            "Run_hint": script("ParseDueHint", {
+                "text": f"@{{concat({rk}?['Title'], ' ', coalesce({rk}?['Evidence'], ''))}}",
+                "receivedKst": f"@{{convertFromUtc({rk}?['Created'], 'Korea Standard Time', 'yyyy-MM-dd')}}",
+                "holidaysJson": "@{string(body('Get_holidays')?['value'])}"}, "기한·긴급도 추정(Office Scripts)"),
+            "Update_hint": sp("Update item", "ActionItems", "기한·우선순위·근거 기록(사람이 언제든 수정 가능)", id=f"@{t('ID')}", item={
+                "Title": f"@{{{rk}?['Title']}}", "Owner/Claims": f"@{{{rk}?['Owner']?['Claims']}}",
+                "Status/Value": f"@{{{rk}?['Status']?['Value']}}", "ActionType/Value": f"@{{{rk}?['ActionType']?['Value']}}",
+                "DueDate": f"@if(empty({hint}?['dueDate']), null, {hint}?['dueDate'])",
+                "Priority/Value": f"@{{if(equals({hint}?['priority'], '높음'), '높음', coalesce({rk}?['Priority']?['Value'], '보통'))}}",
+                "DueHint": f"@{{if(empty({hint}?['phrase']), '근거 없음 — 직접 입력', concat('메일 문구 [', {hint}?['phrase'], ']에서 추정'))}}",
+                "DueHintChecked": "Y"}),
+        },
+        purpose="플래그로 등록된 할 일에 기한이 없으면 메일 제목·미리보기의 '내일까지·10/30까지·금요일까지·긴급' 같은 표현으로 기한·우선순위를 채우고 근거를 남김."))
     return flows
 
 

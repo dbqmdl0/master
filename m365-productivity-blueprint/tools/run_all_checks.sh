@@ -10,5 +10,5 @@ echo "   ok"
 echo "== 4. Pilot 02 Office Scripts(strict 컴파일 + 모의 Workbook) 테스트"; (cd pilots/pilot_02/automation_assets && node --test tests/office_scripts.test.js 2>&1 | grep -E "^# (pass|fail)")
 echo "== 5. Pilot 03 브리핑·AI 추출 가드 테스트"; (cd pilots/pilot_03/automation_assets && python3 -m unittest -q python/test_pilot03.py)
 echo "== 6. 정합성 검사"; python3 tools/check_consistency.py | tail -1
-echo "== 7. Pilot 03 프로토타입: 흐름 lint"; (cd pilots/pilot_03/prototype && python3 tools/lint_flows.py | grep -c PASS | xargs -I{} echo "{}/9 흐름 통과")
-echo "== 8. Pilot 03 프로토타입: 에뮬레이터 시나리오·Office Scripts 교차 검증·변이·KPI"; (cd pilots/pilot_03/prototype && python3 -m unittest -q tests/test_scenarios.py tests/test_office_scripts.py tests/test_mutations.py tests/test_kpi.py tests/test_email_mode.py 2>&1 | grep -E "^(Ran|OK|FAILED)")
+echo "== 7. Pilot 03 프로토타입: 흐름 lint"; (cd pilots/pilot_03/prototype && python3 tools/lint_flows.py | grep -c PASS | xargs -I{} echo "{}/13 흐름 통과")
+echo "== 8. Pilot 03 프로토타입: 에뮬레이터 시나리오·Office Scripts 교차 검증·변이·KPI·메일 모드·추가 기능"; (cd pilots/pilot_03/prototype && python3 -m unittest -q tests/test_scenarios.py tests/test_office_scripts.py tests/test_mutations.py tests/test_kpi.py tests/test_email_mode.py tests/test_extensions.py 2>&1 | grep -E "^(Ran|OK|FAILED)")
