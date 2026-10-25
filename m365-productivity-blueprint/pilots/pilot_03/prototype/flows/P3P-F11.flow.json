@@ -138,10 +138,12 @@
         "Run_prep": {
           "type": "Connector",
           "connector": "Excel Online (Business)",
-          "operation": "Run script from SharePoint library",
+          "operation": "Run script",
           "inputs": {
-            "workbook": "@{outputs('Config')?['hostWorkbook']}",
-            "script": "@{outputs('Config')?['scriptFolder']}/BuildMeetingPrep.osts",
+            "location": "OneDrive for Business",
+            "documentLibrary": "OneDrive",
+            "file": "@{outputs('Config')?['hostWorkbook']}",
+            "script": "BuildMeetingPrep",
             "parameters": {
               "meEmail": "@{outputs('Config')?['me']}",
               "todayKst": "@{outputs('Today')}",
@@ -151,7 +153,7 @@
               "holidaysJson": "@{string(body('Get_holidays')?['value'])}"
             }
           },
-          "note": "회의별 참석자 기준 자료 정리(Office Scripts)",
+          "note": "회의별 참석자 기준 자료 정리(Office Scripts) · 스크립트 위치: 본인 OneDrive 문서/Office Scripts",
           "runAfter": {
             "Get_decisions": [
               "Succeeded"
@@ -235,12 +237,22 @@
       "actions": {
         "Failed_actions": {
           "type": "FilterArray",
-          "note": "Try 안에서 실패한 액션만 추림",
+          "note": "Try 안에서 실패·시간 초과된 액션만 추림",
           "inputs": {
             "from": "@result('Try')",
-            "where": "@equals(item()?['status'], 'Failed')"
+            "where": "@or(equals(item()?['status'], 'Failed'), equals(item()?['status'], 'TimedOut'))"
           },
           "runAfter": {}
+        },
+        "Error_text": {
+          "type": "Compose",
+          "note": "오류 요약(민감 내용 없이 300자 이내). 조건·반복 안쪽 실패는 엔진이 상세를 올려 주지 않으므로 위치를 안내",
+          "inputs": "@{if(greater(length(if(empty(body('Failed_actions')), '실패 액션을 식별하지 못했습니다(실행 기록 링크 확인)', if(equals(first(body('Failed_actions'))?['error']?['code'], 'ActionFailed'), concat('[', first(body('Failed_actions'))?['name'], '] 안쪽 단계가 실패했습니다 — 실행 기록 링크에서 빨간 단계의 오류를 확인하세요'), concat(coalesce(first(body('Failed_actions'))?['error']?['code'], ''), ' ', coalesce(first(body('Failed_actions'))?['error']?['message'], '상세 메시지 없음'))))), 300), substring(if(empty(body('Failed_actions')), '실패 액션을 식별하지 못했습니다(실행 기록 링크 확인)', if(equals(first(body('Failed_actions'))?['error']?['code'], 'ActionFailed'), concat('[', first(body('Failed_actions'))?['name'], '] 안쪽 단계가 실패했습니다 — 실행 기록 링크에서 빨간 단계의 오류를 확인하세요'), concat(coalesce(first(body('Failed_actions'))?['error']?['code'], ''), ' ', coalesce(first(body('Failed_actions'))?['error']?['message'], '상세 메시지 없음')))), 0, 300), if(empty(body('Failed_actions')), '실패 액션을 식별하지 못했습니다(실행 기록 링크 확인)', if(equals(first(body('Failed_actions'))?['error']?['code'], 'ActionFailed'), concat('[', first(body('Failed_actions'))?['name'], '] 안쪽 단계가 실패했습니다 — 실행 기록 링크에서 빨간 단계의 오류를 확인하세요'), concat(coalesce(first(body('Failed_actions'))?['error']?['code'], ''), ' ', coalesce(first(body('Failed_actions'))?['error']?['message'], '상세 메시지 없음')))))}",
+          "runAfter": {
+            "Failed_actions": [
+              "Succeeded"
+            ]
+          }
         },
         "Log_error": {
           "type": "Connector",
@@ -252,8 +264,8 @@
             "item": {
               "Title": "@{workflow()?['tags']?['flowDisplayName']}",
               "FlowRunId": "@{workflow()?['run']?['name']}",
-              "FailedAction": "@{coalesce(first(body('Failed_actions'))?['name'], '')}",
-              "ErrorMessage": "@{coalesce(first(body('Failed_actions'))?['error']?['message'], '상세 메시지 없음(실행 기록 확인)')}",
+              "FailedAction": "@{coalesce(first(body('Failed_actions'))?['name'], '(식별 불가)')}",
+              "ErrorMessage": "@{outputs('Error_text')}",
               "Severity/Value": "Critical",
               "Resolved": false,
               "RunUrl": "@{concat('https://make.powerautomate.com/environments/', workflow()?['tags']?['environmentName'], '/flows/', workflow()?['name'], '/runs/', workflow()?['run']?['name'])}"
@@ -261,9 +273,26 @@
           },
           "note": "공통 오류 로그 기록",
           "runAfter": {
-            "Failed_actions": [
+            "Error_text": [
               "Succeeded"
             ]
+          }
+        },
+        "Log_failed_email": {
+          "type": "Connector",
+          "connector": "Office 365 Outlook",
+          "operation": "Send an email (V2)",
+          "runAfter": {
+            "Log_error": [
+              "Failed",
+              "TimedOut"
+            ]
+          },
+          "note": "오류 로그 기록 실패 시 본인 메일로 직접 알림(내용 없이 흐름 이름·실행 링크만)",
+          "inputs": {
+            "to": "@{outputs('Config')?['me']}",
+            "subject": "@{concat('[P3 오류] ', workflow()?['tags']?['flowDisplayName'], ' — 오류 로그 기록도 실패')}",
+            "body": "@{concat('실패 액션: ', coalesce(first(body('Failed_actions'))?['name'], '(식별 불가)'), '<br>FlowErrorLog 목록 권한·연결을 확인하세요.<br>실행 기록: https://make.powerautomate.com/environments/', workflow()?['tags']?['environmentName'], '/flows/', workflow()?['name'], '/runs/', workflow()?['run']?['name'])}"
           }
         },
         "Terminate_failed": {
@@ -272,14 +301,15 @@
             "runStatus": "Failed",
             "runError": {
               "code": "FlowFailed",
-              "message": "@{concat('실패 액션: ', coalesce(first(body('Failed_actions'))?['name'], '?'))}"
+              "message": "@{concat('실패 액션: ', coalesce(first(body('Failed_actions'))?['name'], '(식별 불가)'))}"
             }
           },
           "runAfter": {
-            "Log_error": [
+            "Log_failed_email": [
               "Succeeded",
               "Failed",
-              "Skipped"
+              "Skipped",
+              "TimedOut"
             ]
           }
         }

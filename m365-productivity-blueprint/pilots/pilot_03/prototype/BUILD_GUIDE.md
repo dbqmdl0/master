@@ -1,5 +1,7 @@
 # BUILD GUIDE — Pilot 03 프로토타입 구축 (클릭 순서)
 
+> **⚠ 2026-10-25 감사 반영:** 구축 **순서**는 `START_HERE_V2.md`·`DEPENDENCY_MATRIX.md`를 따른다(아래 2장의 '목록 7개 한꺼번에'는 참고용). Office Scripts는 개인 파일럿에서 **'Run script'(OneDrive)** 하나로 통일했다(3장과 BUILD_TABLES 일치). 'Update item'은 **모든 열을 채운다**(BUILD_TABLES의 ⚠ 표시).
+
 > **원칙:** 운영 환경을 바꾸기 전에 **샌드박스(가상 데이터)** 에서 전부 돌려본다. 샌드박스 = 본인만 보는 '내 목록'(OneDrive) + 본인 OneDrive의 `P3` 폴더. 알림은 본인에게만 간다(프로토타입 모드).
 > **소요(가정):** 준비 30분 · 목록 1.5시간 · 스크립트 20분 · 흐름 9개 4~5시간 · Copilot 30분 · 테스트 1.5시간 ≈ **1.5일**
 > **메뉴 표기:** `영문(한국어 예상)`. 화면 언어·버전(새 디자이너/클래식)에 따라 이름이 다를 수 있다. 못 찾으면 **영문 명칭으로 검색**. 확인하지 못한 경로는 *(확인 필요)*.
@@ -27,11 +29,11 @@
 | `{{SITE_URL}}` | `https://<회사>-my.sharepoint.com/personal/<계정>` | 2장에서 만든 목록을 열고 주소창의 `/Lists/` 앞부분 |
 | `{{ME}}` | 본인 회사 이메일 | Outlook 프로필 |
 | `{{HOST_WORKBOOK}}` | `/Documents/P3/P3_AutomationHost.xlsx` | 3장 업로드 위치 *(Run script 액션에서는 드롭다운으로 직접 선택)* |
-| `{{SCRIPT_FOLDER}}` | `/Documents/Office Scripts` | 3장 스크립트 저장 위치 |
+| `{{SCRIPT_FOLDER}}` | `/Documents/Office Scripts` | 3장 스크립트 저장 위치 *(개인 파일럿의 'Run script'는 이 기본 위치에서 이름으로 고르므로 흐름 식에서는 쓰지 않는다. 팀 단계 SharePoint 라이브러리 전환용)* |
 | `{{VIEW_MY_ACTIONS}}` | ActionItems '내 액션' 보기 URL | 보기 선택 후 주소창 복사 |
 | `{{VIEW_DECISION_QUEUE}}` | DecisionLog '결정 대기열' 보기 URL | 〃 |
 | `{{VIEW_CANDIDATES}}` | ActionCandidates '확인 대기' 보기 URL | 〃 |
-| `{{NOTIFY_CHANNEL}}` | **`email`** (2026-10-26 점검: Workflows 앱 없음) | Workflows 앱이 허용되면 `teams` |
+| `{{NOTIFY_CHANNEL}}` | **`email`** (2026-10-25 점검: Workflows 앱 없음) | Workflows 앱이 허용되면 `teams` |
 | `{{FACTORY_FOLDER}}` | `/SCM_수신` | 추가 기능 F10의 OneDrive 저장 기본 폴더 |
 
 `prototypeMode: true` — 리마인더를 본인에게만 보낸다. **운영 전환 승인(APPROVALS U-04) 전까지 false로 바꾸지 않는다.**

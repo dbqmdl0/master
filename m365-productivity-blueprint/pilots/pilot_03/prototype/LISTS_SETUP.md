@@ -26,6 +26,9 @@
 | `CreatedVia` | 등록 경로 | 선택(Choice) |  | 수동, Teams 메시지, Outlook 플래그, AI 제안 승인 / 기본값 `수동` |  |  |
 | `DueHint` | 기한 근거 | 한 줄 텍스트 |  |  |  |  |
 | `SourceMessageId` | 원본 메시지 ID(시스템) | 한 줄 텍스트 |  |  | 예 | 예 |
+| `SourceKey` | 원본 고유키(시스템) | 한 줄 텍스트 |  |  | 예 | 예 |
+| `FlagDue` | 자동 기한(시스템) | 날짜 및 시간 (날짜만) |  |  |  | 예 |
+| `SyncNote` | 동기화 메모 | 여러 줄 텍스트 |  |  |  |  |
 | `PrevStatus` | 이전 상태(시스템) | 한 줄 텍스트 |  |  |  | 예 |
 | `DueHintChecked` | 기한 추정 완료(시스템) | 한 줄 텍스트 |  |  |  | 예 |
 
@@ -44,7 +47,9 @@
 | `DecisionText` | 결정 내용 | 여러 줄 텍스트 | 예 |  |  |  |
 | `Rationale` | 근거·전제 | 여러 줄 텍스트 |  |  |  |  |
 | `OptionsConsidered` | 검토한 대안 | 여러 줄 텍스트 |  |  |  |  |
-| `Status` | 상태 | 선택(Choice) | 예 | 제안, 결정요청, 확정, 보류, 번복 / 기본값 `확정` | 예 |  |
+| `FollowUps` | 후속 조치 | 여러 줄 텍스트 |  |  |  |  |
+| `ConfirmationGap` | 확정 확인 필요 | 한 줄 텍스트 |  |  |  |  |
+| `Status` | 상태 | 선택(Choice) | 예 | 제안, 결정요청, 확정, 보류, 번복, 취소 / 기본값 `제안` | 예 |  |
 | `Decider` | 결정권자 | 사람(Person) |  |  | 예 |  |
 | `RequestedBy` | 결정 요청자 | 사람(Person) |  |  |  |  |
 | `RequestedAt` | 결정 요청일 | 날짜 및 시간 (날짜만) |  |  |  |  |
@@ -59,8 +64,10 @@
 | `CreatedVia` | 등록 경로 | 선택(Choice) |  | 수동, Teams 메시지, Outlook 플래그, AI 제안 승인 / 기본값 `수동` |  |  |
 | `PrevStatus` | 이전 상태(시스템) | 한 줄 텍스트 |  |  |  | 예 |
 | `SourceMessageId` | 원본 메시지 ID(시스템) | 한 줄 텍스트 |  |  | 예 | 예 |
+| `SourceKey` | 원본 고유키(시스템) | 한 줄 텍스트 |  |  | 예 | 예 |
+| `SyncNote` | 동기화 메모 | 여러 줄 텍스트 |  |  |  |  |
 
-보기: **결정 대기열** — 필터 Status = 결정요청; **나의 결정 대기** — 필터 Status = 결정요청 AND Decider = [Me]; **최근 확정 30일** — 필터 Status = 확정 AND DecidedAt >= [Today]-30; **재검토 도래** — 필터 ReviewDate <= [Today]+7 AND Status = 확정
+보기: **확정 대기 제안** — 필터 Status = 제안; **결정 대기열** — 필터 Status = 결정요청; **나의 결정 대기** — 필터 Status = 결정요청 AND Decider = [Me]; **최근 확정 30일** — 필터 Status = 확정 AND DecidedAt >= [Today]-30; **재검토 도래** — 필터 ReviewDate <= [Today]+7 AND Status = 확정; **확정 확인 필요** — 필터 Status = 확정 AND ConfirmationGap is not empty
 
 권한: SCM 팀 편집 / 협업 부서 읽기(결정 공유가 목적). 민감 결정은 별도 목록 또는 항목 권한.
 

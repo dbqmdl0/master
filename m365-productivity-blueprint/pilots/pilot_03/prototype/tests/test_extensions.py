@@ -10,7 +10,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
 sys.path.insert(0, str(HERE))
-from env import ME, Env  # noqa: E402
+from env import ME, SCRIPTS, Env  # noqa: E402
 
 DOYUN, HAEUN = "doyun.park@example.com", "haeun.choi@example.com"
 
@@ -103,7 +103,7 @@ class F13_DueHintFlow(unittest.TestCase):
 
     def test_script_failure_logged_item_kept(self):
         e = env()
-        e.excel.files.pop("/personal/seoyeon_han/Documents/P3/Scripts/ParseDueHint.osts")
+        e.excel.files.pop(f"{SCRIPTS}/ParseDueHint.osts")
         e.flag_email("m-h4", subject="내일까지 회신")
         [a] = e.items("ActionItems")              # 할 일 자체는 등록됨(F1은 스크립트에 의존하지 않음)
         self.assertIsNone(a["DueDate"])

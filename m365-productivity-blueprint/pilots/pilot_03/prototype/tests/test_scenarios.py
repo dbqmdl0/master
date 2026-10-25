@@ -10,7 +10,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-from env import ME, Env  # noqa: E402
+from env import ME, SCRIPTS, Env  # noqa: E402
 
 SAMPLES = HERE.parent.parent / "automation_assets" / "sample_data"
 TRANSCRIPT = (SAMPLES / "mock_transcript.txt").read_text(encoding="utf-8")
@@ -57,8 +57,9 @@ class S_Success(unittest.TestCase):
         [a] = e.items("ActionItems")
         self.assertEqual((a["ActionID"], a["Owner"]["Email"], a["Evidence"]), ("ACT-2026-00001", "haeun.choi@example.com", "<p>라인 2 수정본 공유 부탁</p>"))
         d = {x["Title"]: x for x in e.items("DecisionLog")}
-        self.assertEqual(d["해외-1 11월 증량 6천 확정"]["Status"]["Value"], "확정")
-        self.assertEqual(d["해외-1 11월 증량 6천 확정"]["DecidedAt"], "2026-10-26")
+        # 자동화는 '확정'을 만들지 않는다(P0-6): '결정'으로 기록해도 '제안' → 사람이 목록에서 확정
+        self.assertEqual(d["해외-1 11월 증량 6천 확정"]["Status"]["Value"], "제안")
+        self.assertIsNone(d["해외-1 11월 증량 6천 확정"]["DecidedAt"])  # 확정 전이므로 확정일 없음
         self.assertEqual(d["SKU-MOCK-310 잔량 처리"]["Status"]["Value"], "결정요청")
         self.assertEqual(d["SKU-MOCK-310 잔량 처리"]["RequestedAt"], "2026-10-26")
         self.assertEqual(sorted(x["DecisionID"] for x in d.values()), ["DEC-2026-00001", "DEC-2026-00002"])
@@ -126,7 +127,8 @@ class S_Success(unittest.TestCase):
         self.assertEqual({a["Owner"]["Email"] for a in acts}, {"haeun.choi@example.com", "doyun.park@example.com", "minjae.lee@example.com"})
         self.assertTrue(all(a["ActionID"].startswith("ACT-2026-") for a in acts))
         [d] = e.items("DecisionLog")
-        self.assertEqual((d["Status"]["Value"], d["DecisionID"], d["DecidedAt"]), ("확정", "DEC-2026-00001", "2026-10-26"))
+        # AI 추출 결정은 사람이 승인해도 '제안' — 결정권자·확정일은 비움(P0-6)
+        self.assertEqual((d["Status"]["Value"], d["DecisionID"], d["DecidedAt"], d["Decider"]), ("제안", "DEC-2026-00001", None, None))
 
     def test_S07_completed_at_set_and_cleared(self):
         e = Env()
@@ -149,8 +151,10 @@ class F_Failures(unittest.TestCase):
         tries = [c for c in e.rt.connector_calls if c[1] == "Create_action"]
         self.assertEqual(len(tries), 5)  # 최초 1 + 재시도 4
         [err] = e.errors()
-        self.assertEqual(err["FailedAction"], "Create_action")
-        self.assertIn("500", err["ErrorMessage"])
+        # 조건 안쪽 실패: 엔진은 바깥 조건 이름만 올려 준다 → 오류 로그가 위치와 확인 방법을 안내
+        self.assertEqual(err["FailedAction"], "If_has_action")
+        self.assertIn("안쪽 단계가 실패", err["ErrorMessage"])
+        self.assertEqual(r.actions["Create_action"]["error"]["status"], 500)  # 상세는 실행 기록에 남음
         self.assertEqual(e.items("ActionItems"), [])
 
     def test_F02_throttling_recovers(self):
@@ -183,7 +187,7 @@ class F_Failures(unittest.TestCase):
     def test_F05_script_error_reported(self):
         e = Env()
         e.ui_create("ActionItems", {"Title": "x", "Owner/Claims": ME, "Status/Value": "미착수", "ActionType/Value": "실행"})
-        e.excel.files.pop(f"{e.rt.flows[0].d['actions']['Config']['inputs']['scriptFolder']}/BuildDailyBrief.osts")
+        e.excel.files.pop(f"{SCRIPTS}/BuildDailyBrief.osts")
         r = e.recurrence("P3P-F6")
         self.assertEqual(r.status, "Failed")
         self.assertIn("파일 없음", e.errors()[0]["ErrorMessage"])
@@ -194,7 +198,8 @@ class D_Duplicates(unittest.TestCase):
         e = Env()
         e.flag_email("AAMk-5")
         r = e.flag_email("AAMk-5")[0]
-        self.assertEqual((r.status, r.terminate["code"]), ("Succeeded", "Duplicate"))
+        # 이미 있는 메일 → 바뀐 것이 없으면 아무것도 쓰지 않고 성공 종료(P0-2 멱등 규칙)
+        self.assertEqual((r.status, r.terminate["code"]), ("Succeeded", "NoChange"))
         self.assertEqual(len(e.items("ActionItems")), 1)
 
     def test_D02_parallel_triggers_with_concurrency_1(self):
@@ -260,7 +265,8 @@ class P_Permissions(unittest.TestCase):
         r = e.flag_email("AAMk-8", folder="Sent Items")[0]
         self.assertEqual(r.status, "Failed")
         self.assertEqual(len([c for c in e.rt.connector_calls if c[1] == "Create_action"]), 1)  # 403은 재시도 안 함
-        self.assertIn("권한 없음", e.errors()[0]["ErrorMessage"])
+        self.assertIn("안쪽 단계가 실패", e.errors()[0]["ErrorMessage"])
+        self.assertIn("권한 없음", r.actions["Create_action"]["error"]["message"])
 
     def test_P02_host_workbook_not_shared(self):
         e = Env()

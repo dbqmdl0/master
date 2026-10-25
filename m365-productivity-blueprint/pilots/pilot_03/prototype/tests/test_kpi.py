@@ -33,7 +33,9 @@ def export(env, lst, folder):
 class KpiTest(unittest.TestCase):
     def test_model_totals(self):
         m = kpi_report.model(write=False)
-        self.assertEqual((m["base"], m["net"], m["conditional"]), (196.8, 181.8, 44.0))
+        # 순절감 = 총절감 196.8 − 추가 관리 16.8 − 유지 15 − 오류 복구 12 (모두 가정)
+        self.assertEqual((m["base"], m["mgmt"], m["net"], m["conditional"]), (196.8, 16.8, 153.0, 44.0))
+        self.assertEqual((m["a_gross"], m["a_net"]), (53.6, 32.8))
 
     def test_report_from_emulated_month(self):
         e = Env()
@@ -63,14 +65,33 @@ class KpiTest(unittest.TestCase):
                 w.writerow([f"2026-10-0{d}", "기준선", "아침 업무 파악", 20, ""])
                 w.writerow([f"2026-10-1{d}", "적용후", "아침 업무 파악", 9, ""])
             w.writerow(["2026-10-01", "기준선", "주간보고 작성", 30, ""])
+            for d in range(1, 6):
+                w.writerow([f"2026-10-1{d}", "적용후", "추가 관리(자동화)", 2, ""])
+            w.writerow(["2026-10-12", "적용후", "오류 복구", 5, ""])
         rep = kpi_report.report(tmp, kpi_report.date(2026, 10, 26), log)
         self.assertIn("액션 총 5건, 자동·반자동 등록 비율 80% (4/5)", rep)
         self.assertIn("기한 초과율: 33% (1/3)", rep)          # 플래그 기한 10/20 건만 초과
         self.assertIn("기한 내 완료율: 100% (1/1)", rep)
         self.assertIn("'추천' 후보 채택률(정밀도 대용): 75% (3/4)", rep)
         self.assertIn("현재 결정 대기 1건, 최장 6일", rep)
-        self.assertIn("| 아침 업무 파악 | 20.0 | 9.0 | +11.0 | 실측 확정 |", rep)
+        self.assertIn("| 아침 업무 파악 | 20.0 | 9.0 | +11.0 | 건수 없음(일평균 비교) | 실측 확정 |", rep)
         self.assertIn("기록 부족", rep)                         # 주간보고는 1일치 → 가정 유지
+        self.assertIn("업무 절감 11.0 − 추가 관리 2.0 − 오류 복구 1.0 = **8.0분/일**", rep)
+
+    def test_workload_normalization(self):
+        tmp = Path(tempfile.mkdtemp())
+        for lst in ("ActionItems", "DecisionLog", "ActionCandidates"):
+            export(Env(flows=[]), lst, tmp)
+        log = tmp / "timelog.csv"
+        with log.open("w", newline="", encoding="utf-8-sig") as f:
+            w = csv.writer(f)
+            w.writerow(["날짜", "구분", "업무", "소요분", "처리건수", "비고"])
+            for d in range(1, 6):
+                w.writerow([f"2026-10-0{d}", "기준선", "공장 자료 정리", 40, 10, ""])   # 건당 4분, 하루 10건
+                w.writerow([f"2026-10-1{d}", "적용후", "공장 자료 정리", 10, 20, ""])   # 건당 0.5분, 업무량 2배
+        rep = kpi_report.report(tmp, kpi_report.date(2026, 10, 26), log)
+        # 일평균 단순 비교는 30분이지만 업무량이 2배 → 건당 3.5분 × 20건 = 70분/일
+        self.assertIn("| 공장 자료 정리 | 40.0 | 10.0 | +70.0 | 건당 4.0→0.5분 | 실측 확정 |", rep)
 
 
 if __name__ == "__main__":

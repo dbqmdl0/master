@@ -59,7 +59,7 @@ def main():
     ws = wb.active
     ws.title = "README"
     for line in ["P3_AutomationHost.xlsx — Office Scripts 계산 호스트(가상)",
-                 "Power Automate 'Run script from SharePoint library'가 이 파일을 대상으로 스크립트를 실행한다.",
+                 "Power Automate 'Run script'(위치 OneDrive for Business)가 이 파일을 대상으로 스크립트를 실행한다. 스크립트는 본인 OneDrive '문서/Office Scripts' 폴더에 저장한다.",
                  "스크립트(BuildDailyBrief·BuildReminderDigest·GuardExtraction)는 이 파일의 내용을 읽거나 바꾸지 않는다.",
                  "업무 데이터를 이 파일에 넣지 말 것. 삭제·이동하면 아침 브리핑·리마인더·AI 검증 흐름이 실패한다."]:
         ws.append([line])

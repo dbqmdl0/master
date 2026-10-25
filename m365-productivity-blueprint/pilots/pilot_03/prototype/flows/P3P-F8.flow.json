@@ -40,6 +40,41 @@
         ]
       },
       "actions": {
+        "Get_intake": {
+          "type": "Connector",
+          "connector": "SharePoint",
+          "operation": "Get item",
+          "inputs": {
+            "site": "@{outputs('Config')?['site']}",
+            "list": "MeetingIntake",
+            "id": "@triggerOutputs()?['body/ID']"
+          },
+          "note": "접수 항목 최신 값",
+          "runAfter": {}
+        },
+        "If_already": {
+          "type": "If",
+          "expression": "@not(or(equals(body('Get_intake')?['Status']?['Value'], '접수'), equals(body('Get_intake')?['Status']?['Value'], '재검증요청')))",
+          "actions": {
+            "Stop_already": {
+              "type": "Terminate",
+              "inputs": {
+                "runStatus": "Succeeded",
+                "runError": {
+                  "code": "AlreadyHandled",
+                  "message": "이미 처리된 접수"
+                }
+              },
+              "runAfter": {}
+            }
+          },
+          "note": "중복·지연 실행 방어",
+          "runAfter": {
+            "Get_intake": [
+              "Succeeded"
+            ]
+          }
+        },
         "Get_roster": {
           "type": "Connector",
           "connector": "SharePoint",
@@ -50,23 +85,29 @@
             "top": 500
           },
           "note": "팀 명부(담당자 매핑 근거)",
-          "runAfter": {}
+          "runAfter": {
+            "If_already": [
+              "Succeeded"
+            ]
+          }
         },
         "Run_guard": {
           "type": "Connector",
           "connector": "Excel Online (Business)",
-          "operation": "Run script from SharePoint library",
+          "operation": "Run script",
           "inputs": {
-            "workbook": "@{outputs('Config')?['hostWorkbook']}",
-            "script": "@{outputs('Config')?['scriptFolder']}/GuardExtraction.osts",
+            "location": "OneDrive for Business",
+            "documentLibrary": "OneDrive",
+            "file": "@{outputs('Config')?['hostWorkbook']}",
+            "script": "GuardExtraction",
             "parameters": {
-              "transcript": "@{triggerOutputs()?['body/Transcript']}",
+              "transcript": "@{body('Get_intake')?['Transcript']}",
               "rosterJson": "@{string(body('Get_roster')?['value'])}",
-              "extractionJson": "@{triggerOutputs()?['body/ExtractionJson']}",
+              "extractionJson": "@{body('Get_intake')?['ExtractionJson']}",
               "meetingDate": "@{formatDateTime(triggerOutputs()?['body/MeetingDate'], 'yyyy-MM-dd')}"
             }
           },
-          "note": "G1~G6 검증(Office Scripts)",
+          "note": "G1~G6 검증(Office Scripts) · 스크립트 위치: 본인 OneDrive 문서/Office Scripts",
           "runAfter": {
             "Get_roster": [
               "Succeeded"
@@ -104,15 +145,30 @@
                 "list": "ActionCandidates",
                 "id": "@items('Supersede_old')?['ID']",
                 "item": {
-                  "Title": "@{items('Supersede_old')?['Title']}",
-                  "Kind/Value": "@{items('Supersede_old')?['Kind']?['Value']}",
+                  "Title": "@items('Supersede_old')?['Title']",
+                  "Kind/Value": "@items('Supersede_old')?['Kind']?['Value']",
                   "IntakeID": "@items('Supersede_old')?['IntakeID']",
-                  "Verdict/Value": "@{items('Supersede_old')?['Verdict']?['Value']}",
+                  "Ref": "@items('Supersede_old')?['Ref']",
+                  "MeetingName": "@items('Supersede_old')?['MeetingName']",
+                  "MeetingDate": "@items('Supersede_old')?['MeetingDate']",
+                  "OwnerName": "@items('Supersede_old')?['OwnerName']",
+                  "OwnerEmail": "@items('Supersede_old')?['OwnerEmail']",
+                  "DueDate": "@items('Supersede_old')?['DueDate']",
+                  "Evidence": "@items('Supersede_old')?['Evidence']",
+                  "Verdict/Value": "@items('Supersede_old')?['Verdict']?['Value']",
+                  "Reasons": "@items('Supersede_old')?['Reasons']",
+                  "CreatedItemID": "@items('Supersede_old')?['CreatedItemID']",
                   "Status/Value": "기각"
                 }
               },
-              "note": "기각",
-              "runAfter": {}
+              "note": "기각(다른 열 보존)",
+              "runAfter": {},
+              "preserve": {
+                "from": "items('Supersede_old')",
+                "changed": [
+                  "Status/Value"
+                ]
+              }
             }
           },
           "runAfter": {
@@ -168,10 +224,10 @@
                 "list": "MeetingIntake",
                 "id": "@triggerOutputs()?['body/ID']",
                 "item": {
-                  "Title": "@{triggerOutputs()?['body/Title']}",
-                  "MeetingDate": "@{triggerOutputs()?['body/MeetingDate']}",
-                  "Transcript": "@{triggerOutputs()?['body/Transcript']}",
-                  "ExtractionJson": "@{triggerOutputs()?['body/ExtractionJson']}",
+                  "Title": "@body('Get_intake')?['Title']",
+                  "MeetingDate": "@body('Get_intake')?['MeetingDate']",
+                  "Transcript": "@body('Get_intake')?['Transcript']",
+                  "ExtractionJson": "@body('Get_intake')?['ExtractionJson']",
                   "Status/Value": "검증완료",
                   "RecommendedCount": "@body('Run_guard')?['result']?['recommendedCount']",
                   "ReviewCount": "@body('Run_guard')?['result']?['reviewCount']",
@@ -179,7 +235,17 @@
                   "ProcessedAt": "@{utcNow()}"
                 }
               },
-              "note": "접수 완료 표시(자기 재실행 차단)",
+              "note": "접수 완료 표시(자기 재실행 차단, 원문 보존)",
+              "preserve": {
+                "from": "body('Get_intake')",
+                "changed": [
+                  "Status/Value",
+                  "RecommendedCount",
+                  "ReviewCount",
+                  "ResultSummary",
+                  "ProcessedAt"
+                ]
+              },
               "runAfter": {
                 "Create_candidates": [
                   "Succeeded"
@@ -240,16 +306,26 @@
                   "list": "MeetingIntake",
                   "id": "@triggerOutputs()?['body/ID']",
                   "item": {
-                    "Title": "@{triggerOutputs()?['body/Title']}",
-                    "MeetingDate": "@{triggerOutputs()?['body/MeetingDate']}",
-                    "Transcript": "@{triggerOutputs()?['body/Transcript']}",
-                    "ExtractionJson": "@{triggerOutputs()?['body/ExtractionJson']}",
+                    "Title": "@body('Get_intake')?['Title']",
+                    "MeetingDate": "@body('Get_intake')?['MeetingDate']",
+                    "Transcript": "@body('Get_intake')?['Transcript']",
+                    "ExtractionJson": "@body('Get_intake')?['ExtractionJson']",
+                    "RecommendedCount": "@body('Get_intake')?['RecommendedCount']",
+                    "ReviewCount": "@body('Get_intake')?['ReviewCount']",
                     "Status/Value": "오류",
                     "ResultSummary": "@{body('Run_guard')?['result']?['parseError']}",
                     "ProcessedAt": "@{utcNow()}"
                   }
                 },
-                "note": "오류 표시",
+                "note": "오류 표시(원문 보존)",
+                "preserve": {
+                  "from": "body('Get_intake')",
+                  "changed": [
+                    "Status/Value",
+                    "ResultSummary",
+                    "ProcessedAt"
+                  ]
+                },
                 "runAfter": {}
               },
               "Tell_parse_error": {
@@ -314,12 +390,22 @@
       "actions": {
         "Failed_actions": {
           "type": "FilterArray",
-          "note": "Try 안에서 실패한 액션만 추림",
+          "note": "Try 안에서 실패·시간 초과된 액션만 추림",
           "inputs": {
             "from": "@result('Try')",
-            "where": "@equals(item()?['status'], 'Failed')"
+            "where": "@or(equals(item()?['status'], 'Failed'), equals(item()?['status'], 'TimedOut'))"
           },
           "runAfter": {}
+        },
+        "Error_text": {
+          "type": "Compose",
+          "note": "오류 요약(민감 내용 없이 300자 이내). 조건·반복 안쪽 실패는 엔진이 상세를 올려 주지 않으므로 위치를 안내",
+          "inputs": "@{if(greater(length(if(empty(body('Failed_actions')), '실패 액션을 식별하지 못했습니다(실행 기록 링크 확인)', if(equals(first(body('Failed_actions'))?['error']?['code'], 'ActionFailed'), concat('[', first(body('Failed_actions'))?['name'], '] 안쪽 단계가 실패했습니다 — 실행 기록 링크에서 빨간 단계의 오류를 확인하세요'), concat(coalesce(first(body('Failed_actions'))?['error']?['code'], ''), ' ', coalesce(first(body('Failed_actions'))?['error']?['message'], '상세 메시지 없음'))))), 300), substring(if(empty(body('Failed_actions')), '실패 액션을 식별하지 못했습니다(실행 기록 링크 확인)', if(equals(first(body('Failed_actions'))?['error']?['code'], 'ActionFailed'), concat('[', first(body('Failed_actions'))?['name'], '] 안쪽 단계가 실패했습니다 — 실행 기록 링크에서 빨간 단계의 오류를 확인하세요'), concat(coalesce(first(body('Failed_actions'))?['error']?['code'], ''), ' ', coalesce(first(body('Failed_actions'))?['error']?['message'], '상세 메시지 없음')))), 0, 300), if(empty(body('Failed_actions')), '실패 액션을 식별하지 못했습니다(실행 기록 링크 확인)', if(equals(first(body('Failed_actions'))?['error']?['code'], 'ActionFailed'), concat('[', first(body('Failed_actions'))?['name'], '] 안쪽 단계가 실패했습니다 — 실행 기록 링크에서 빨간 단계의 오류를 확인하세요'), concat(coalesce(first(body('Failed_actions'))?['error']?['code'], ''), ' ', coalesce(first(body('Failed_actions'))?['error']?['message'], '상세 메시지 없음')))))}",
+          "runAfter": {
+            "Failed_actions": [
+              "Succeeded"
+            ]
+          }
         },
         "Log_error": {
           "type": "Connector",
@@ -331,8 +417,8 @@
             "item": {
               "Title": "@{workflow()?['tags']?['flowDisplayName']}",
               "FlowRunId": "@{workflow()?['run']?['name']}",
-              "FailedAction": "@{coalesce(first(body('Failed_actions'))?['name'], '')}",
-              "ErrorMessage": "@{coalesce(first(body('Failed_actions'))?['error']?['message'], '상세 메시지 없음(실행 기록 확인)')}",
+              "FailedAction": "@{coalesce(first(body('Failed_actions'))?['name'], '(식별 불가)')}",
+              "ErrorMessage": "@{outputs('Error_text')}",
               "Severity/Value": "Critical",
               "Resolved": false,
               "RunUrl": "@{concat('https://make.powerautomate.com/environments/', workflow()?['tags']?['environmentName'], '/flows/', workflow()?['name'], '/runs/', workflow()?['run']?['name'])}"
@@ -340,9 +426,26 @@
           },
           "note": "공통 오류 로그 기록",
           "runAfter": {
-            "Failed_actions": [
+            "Error_text": [
               "Succeeded"
             ]
+          }
+        },
+        "Log_failed_email": {
+          "type": "Connector",
+          "connector": "Office 365 Outlook",
+          "operation": "Send an email (V2)",
+          "runAfter": {
+            "Log_error": [
+              "Failed",
+              "TimedOut"
+            ]
+          },
+          "note": "오류 로그 기록 실패 시 본인 메일로 직접 알림(내용 없이 흐름 이름·실행 링크만)",
+          "inputs": {
+            "to": "@{outputs('Config')?['me']}",
+            "subject": "@{concat('[P3 오류] ', workflow()?['tags']?['flowDisplayName'], ' — 오류 로그 기록도 실패')}",
+            "body": "@{concat('실패 액션: ', coalesce(first(body('Failed_actions'))?['name'], '(식별 불가)'), '<br>FlowErrorLog 목록 권한·연결을 확인하세요.<br>실행 기록: https://make.powerautomate.com/environments/', workflow()?['tags']?['environmentName'], '/flows/', workflow()?['name'], '/runs/', workflow()?['run']?['name'])}"
           }
         },
         "Terminate_failed": {
@@ -351,14 +454,15 @@
             "runStatus": "Failed",
             "runError": {
               "code": "FlowFailed",
-              "message": "@{concat('실패 액션: ', coalesce(first(body('Failed_actions'))?['name'], '?'))}"
+              "message": "@{concat('실패 액션: ', coalesce(first(body('Failed_actions'))?['name'], '(식별 불가)'))}"
             }
           },
           "runAfter": {
-            "Log_error": [
+            "Log_failed_email": [
               "Succeeded",
               "Failed",
-              "Skipped"
+              "Skipped",
+              "TimedOut"
             ]
           }
         }

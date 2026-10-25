@@ -1,7 +1,7 @@
 {
   "id": "P3P-F4",
   "name": "P3P-F4 DecisionLog 번호·상태 기록",
-  "purpose": "DecisionLog 새 항목에 DEC-연도-번호 부여, 상태 변경 시각 기록. 트리거 조건으로 자기 수정에 의한 재실행 차단.",
+  "purpose": "DecisionLog 새 항목에 DEC-연도-번호 부여, 상태 변경 시각 기록. 트리거 조건 + 최신 값 재확인으로 자기 수정·중복 실행 차단.",
   "trigger": {
     "kind": "SharePoint.WhenAnItemIsCreatedOrModified",
     "inputs": {
@@ -9,7 +9,7 @@
       "list": "DecisionLog"
     },
     "conditions": [
-      "@or(empty(triggerOutputs()?['body/DecisionID']), not(equals(triggerOutputs()?['body/Status/Value'], coalesce(triggerOutputs()?['body/PrevStatus'], ''))))"
+      "@or(or(empty(triggerOutputs()?['body/DecisionID']), not(equals(triggerOutputs()?['body/Status/Value'], coalesce(triggerOutputs()?['body/PrevStatus'], '')))), not(equals(coalesce(triggerOutputs()?['body/ConfirmationGap'], ''), if(equals(triggerOutputs()?['body/Status/Value'], '확정'), trim(concat(if(empty(triggerOutputs()?['body/Decider']), '결정권자 ', ''), if(empty(triggerOutputs()?['body/Rationale']), '근거 ', ''), if(empty(triggerOutputs()?['body/FollowUps']), '후속조치 ', ''))), ''))))"
     ]
   },
   "actions": {
@@ -40,6 +40,41 @@
         ]
       },
       "actions": {
+        "Fresh": {
+          "type": "Connector",
+          "connector": "SharePoint",
+          "operation": "Get item",
+          "inputs": {
+            "site": "@{outputs('Config')?['site']}",
+            "list": "DecisionLog",
+            "id": "@triggerOutputs()?['body/ID']"
+          },
+          "note": "최신 값 읽기(트리거 시점 값은 오래됐을 수 있음)",
+          "runAfter": {}
+        },
+        "If_handled": {
+          "type": "If",
+          "expression": "@and(and(not(empty(body('Fresh')?['DecisionID'])), equals(body('Fresh')?['Status']?['Value'], coalesce(body('Fresh')?['PrevStatus'], ''))), equals(coalesce(body('Fresh')?['ConfirmationGap'], ''), if(equals(body('Fresh')?['Status']?['Value'], '확정'), trim(concat(if(empty(body('Fresh')?['Decider']), '결정권자 ', ''), if(empty(body('Fresh')?['Rationale']), '근거 ', ''), if(empty(body('Fresh')?['FollowUps']), '후속조치 ', ''))), '')))",
+          "actions": {
+            "Stop_handled": {
+              "type": "Terminate",
+              "inputs": {
+                "runStatus": "Succeeded",
+                "runError": {
+                  "code": "AlreadyHandled",
+                  "message": "다른 실행이 이미 처리함"
+                }
+              },
+              "runAfter": {}
+            }
+          },
+          "note": "중복·지연 실행 방어",
+          "runAfter": {
+            "Fresh": [
+              "Succeeded"
+            ]
+          }
+        },
         "Update_item": {
           "type": "Connector",
           "connector": "SharePoint",
@@ -49,17 +84,48 @@
             "list": "DecisionLog",
             "id": "@triggerOutputs()?['body/ID']",
             "item": {
-              "Title": "@{triggerOutputs()?['body/Title']}",
-              "DecisionText": "@{triggerOutputs()?['body/DecisionText']}",
-              "Status/Value": "@{triggerOutputs()?['body/Status/Value']}",
-              "DecisionID": "@{if(empty(triggerOutputs()?['body/DecisionID']), concat('DEC-', convertFromUtc(triggerOutputs()?['body/Created'], 'Korea Standard Time', 'yyyy'), '-', formatNumber(triggerOutputs()?['body/ID'], '00000')), triggerOutputs()?['body/DecisionID'])}",
-              "DecidedAt": "@if(and(equals(triggerOutputs()?['body/Status/Value'], '확정'), empty(triggerOutputs()?['body/DecidedAt'])), convertFromUtc(utcNow(), 'Korea Standard Time', 'yyyy-MM-dd'), triggerOutputs()?['body/DecidedAt'])",
-              "RequestedAt": "@if(and(equals(triggerOutputs()?['body/Status/Value'], '결정요청'), empty(triggerOutputs()?['body/RequestedAt'])), convertFromUtc(utcNow(), 'Korea Standard Time', 'yyyy-MM-dd'), triggerOutputs()?['body/RequestedAt'])",
-              "PrevStatus": "@{triggerOutputs()?['body/Status/Value']}"
+              "Title": "@body('Fresh')?['Title']",
+              "DecisionText": "@body('Fresh')?['DecisionText']",
+              "Rationale": "@body('Fresh')?['Rationale']",
+              "OptionsConsidered": "@body('Fresh')?['OptionsConsidered']",
+              "FollowUps": "@body('Fresh')?['FollowUps']",
+              "Status/Value": "@body('Fresh')?['Status']?['Value']",
+              "Decider/Claims": "@body('Fresh')?['Decider']?['Claims']",
+              "RequestedBy/Claims": "@body('Fresh')?['RequestedBy']?['Claims']",
+              "MeetingName": "@body('Fresh')?['MeetingName']",
+              "MeetingDate": "@body('Fresh')?['MeetingDate']",
+              "Impact/Value": "@body('Fresh')?['Impact']?['Value']",
+              "ReviewDate": "@body('Fresh')?['ReviewDate']",
+              "SourceLink": "@body('Fresh')?['SourceLink']",
+              "RelatedRequestID": "@body('Fresh')?['RelatedRequestID']",
+              "SupersededBy": "@body('Fresh')?['SupersededBy']",
+              "CreatedVia/Value": "@body('Fresh')?['CreatedVia']?['Value']",
+              "SourceMessageId": "@body('Fresh')?['SourceMessageId']",
+              "SourceKey": "@body('Fresh')?['SourceKey']",
+              "SyncNote": "@body('Fresh')?['SyncNote']",
+              "DecisionID": "@{if(empty(body('Fresh')?['DecisionID']), concat('DEC-', convertFromUtc(body('Fresh')?['Created'], 'Korea Standard Time', 'yyyy'), '-', formatNumber(body('Fresh')?['ID'], '00000')), body('Fresh')?['DecisionID'])}",
+              "DecidedAt": "@if(and(equals(body('Fresh')?['Status']?['Value'], '확정'), empty(body('Fresh')?['DecidedAt'])), convertFromUtc(utcNow(), 'Korea Standard Time', 'yyyy-MM-dd'), body('Fresh')?['DecidedAt'])",
+              "RequestedAt": "@if(and(equals(body('Fresh')?['Status']?['Value'], '결정요청'), empty(body('Fresh')?['RequestedAt'])), convertFromUtc(utcNow(), 'Korea Standard Time', 'yyyy-MM-dd'), body('Fresh')?['RequestedAt'])",
+              "ConfirmationGap": "@{if(equals(body('Fresh')?['Status']?['Value'], '확정'), trim(concat(if(empty(body('Fresh')?['Decider']), '결정권자 ', ''), if(empty(body('Fresh')?['Rationale']), '근거 ', ''), if(empty(body('Fresh')?['FollowUps']), '후속조치 ', ''))), '')}",
+              "PrevStatus": "@{body('Fresh')?['Status']?['Value']}"
             }
           },
-          "note": "번호 부여·상태 변경 기록. PrevStatus를 현재 상태로 맞춰 자기 재실행을 막는다",
-          "runAfter": {}
+          "note": "번호 부여·상태 변경 기록(모든 열 보존). PrevStatus를 현재 상태로 맞춰 자기 재실행을 막는다",
+          "preserve": {
+            "from": "body('Fresh')",
+            "changed": [
+              "DecisionID",
+              "DecidedAt",
+              "RequestedAt",
+              "ConfirmationGap",
+              "PrevStatus"
+            ]
+          },
+          "runAfter": {
+            "If_handled": [
+              "Succeeded"
+            ]
+          }
         }
       }
     },
@@ -74,12 +140,22 @@
       "actions": {
         "Failed_actions": {
           "type": "FilterArray",
-          "note": "Try 안에서 실패한 액션만 추림",
+          "note": "Try 안에서 실패·시간 초과된 액션만 추림",
           "inputs": {
             "from": "@result('Try')",
-            "where": "@equals(item()?['status'], 'Failed')"
+            "where": "@or(equals(item()?['status'], 'Failed'), equals(item()?['status'], 'TimedOut'))"
           },
           "runAfter": {}
+        },
+        "Error_text": {
+          "type": "Compose",
+          "note": "오류 요약(민감 내용 없이 300자 이내). 조건·반복 안쪽 실패는 엔진이 상세를 올려 주지 않으므로 위치를 안내",
+          "inputs": "@{if(greater(length(if(empty(body('Failed_actions')), '실패 액션을 식별하지 못했습니다(실행 기록 링크 확인)', if(equals(first(body('Failed_actions'))?['error']?['code'], 'ActionFailed'), concat('[', first(body('Failed_actions'))?['name'], '] 안쪽 단계가 실패했습니다 — 실행 기록 링크에서 빨간 단계의 오류를 확인하세요'), concat(coalesce(first(body('Failed_actions'))?['error']?['code'], ''), ' ', coalesce(first(body('Failed_actions'))?['error']?['message'], '상세 메시지 없음'))))), 300), substring(if(empty(body('Failed_actions')), '실패 액션을 식별하지 못했습니다(실행 기록 링크 확인)', if(equals(first(body('Failed_actions'))?['error']?['code'], 'ActionFailed'), concat('[', first(body('Failed_actions'))?['name'], '] 안쪽 단계가 실패했습니다 — 실행 기록 링크에서 빨간 단계의 오류를 확인하세요'), concat(coalesce(first(body('Failed_actions'))?['error']?['code'], ''), ' ', coalesce(first(body('Failed_actions'))?['error']?['message'], '상세 메시지 없음')))), 0, 300), if(empty(body('Failed_actions')), '실패 액션을 식별하지 못했습니다(실행 기록 링크 확인)', if(equals(first(body('Failed_actions'))?['error']?['code'], 'ActionFailed'), concat('[', first(body('Failed_actions'))?['name'], '] 안쪽 단계가 실패했습니다 — 실행 기록 링크에서 빨간 단계의 오류를 확인하세요'), concat(coalesce(first(body('Failed_actions'))?['error']?['code'], ''), ' ', coalesce(first(body('Failed_actions'))?['error']?['message'], '상세 메시지 없음')))))}",
+          "runAfter": {
+            "Failed_actions": [
+              "Succeeded"
+            ]
+          }
         },
         "Log_error": {
           "type": "Connector",
@@ -91,8 +167,8 @@
             "item": {
               "Title": "@{workflow()?['tags']?['flowDisplayName']}",
               "FlowRunId": "@{workflow()?['run']?['name']}",
-              "FailedAction": "@{coalesce(first(body('Failed_actions'))?['name'], '')}",
-              "ErrorMessage": "@{coalesce(first(body('Failed_actions'))?['error']?['message'], '상세 메시지 없음(실행 기록 확인)')}",
+              "FailedAction": "@{coalesce(first(body('Failed_actions'))?['name'], '(식별 불가)')}",
+              "ErrorMessage": "@{outputs('Error_text')}",
               "Severity/Value": "Critical",
               "Resolved": false,
               "RunUrl": "@{concat('https://make.powerautomate.com/environments/', workflow()?['tags']?['environmentName'], '/flows/', workflow()?['name'], '/runs/', workflow()?['run']?['name'])}"
@@ -100,9 +176,26 @@
           },
           "note": "공통 오류 로그 기록",
           "runAfter": {
-            "Failed_actions": [
+            "Error_text": [
               "Succeeded"
             ]
+          }
+        },
+        "Log_failed_email": {
+          "type": "Connector",
+          "connector": "Office 365 Outlook",
+          "operation": "Send an email (V2)",
+          "runAfter": {
+            "Log_error": [
+              "Failed",
+              "TimedOut"
+            ]
+          },
+          "note": "오류 로그 기록 실패 시 본인 메일로 직접 알림(내용 없이 흐름 이름·실행 링크만)",
+          "inputs": {
+            "to": "@{outputs('Config')?['me']}",
+            "subject": "@{concat('[P3 오류] ', workflow()?['tags']?['flowDisplayName'], ' — 오류 로그 기록도 실패')}",
+            "body": "@{concat('실패 액션: ', coalesce(first(body('Failed_actions'))?['name'], '(식별 불가)'), '<br>FlowErrorLog 목록 권한·연결을 확인하세요.<br>실행 기록: https://make.powerautomate.com/environments/', workflow()?['tags']?['environmentName'], '/flows/', workflow()?['name'], '/runs/', workflow()?['run']?['name'])}"
           }
         },
         "Terminate_failed": {
@@ -111,14 +204,15 @@
             "runStatus": "Failed",
             "runError": {
               "code": "FlowFailed",
-              "message": "@{concat('실패 액션: ', coalesce(first(body('Failed_actions'))?['name'], '?'))}"
+              "message": "@{concat('실패 액션: ', coalesce(first(body('Failed_actions'))?['name'], '(식별 불가)'))}"
             }
           },
           "runAfter": {
-            "Log_error": [
+            "Log_failed_email": [
               "Succeeded",
               "Failed",
-              "Skipped"
+              "Skipped",
+              "TimedOut"
             ]
           }
         }

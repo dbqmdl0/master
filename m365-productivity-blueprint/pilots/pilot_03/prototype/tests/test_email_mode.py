@@ -79,8 +79,8 @@ class CategoryRouting(unittest.TestCase):
         e.flag_email("AAMk-d2", subject="SKU-MOCK-310 잔량 처리 결정 부탁", preview="판촉 소진 vs 폐기", categories=["결정요청", "공장자료"])
         e.flag_email("AAMk-a1", subject="라인 2 계획 수정본 공유 요청", categories=["공장자료"])
         d = {x["Title"]: x for x in e.items("DecisionLog")}
-        self.assertEqual(d["해외-1 11월 증량 6천 확정"]["Status"]["Value"], "확정")
-        self.assertEqual(d["해외-1 11월 증량 6천 확정"]["DecidedAt"], "2026-10-26")
+        self.assertEqual(d["해외-1 11월 증량 6천 확정"]["Status"]["Value"], "제안")  # P0-6: 범주 '결정' → 제안
+        self.assertIsNone(d["해외-1 11월 증량 6천 확정"]["DecidedAt"])  # 확정 전이므로 확정일 없음
         self.assertEqual(d["SKU-MOCK-310 잔량 처리 결정 부탁"]["Status"]["Value"], "결정요청")
         self.assertEqual(d["SKU-MOCK-310 잔량 처리 결정 부탁"]["RequestedAt"], "2026-10-26")
         self.assertTrue(all(x["DecisionID"].startswith("DEC-2026-") for x in d.values()))
@@ -91,7 +91,7 @@ class CategoryRouting(unittest.TestCase):
         e = email_env()
         e.flag_email("AAMk-d3", subject="결정 건", categories=["결정"])
         r = e.flag_email("AAMk-d3", subject="결정 건", categories=["결정"])[0]
-        self.assertEqual(r.terminate["code"], "Duplicate")
+        self.assertEqual(r.terminate["code"], "NoChange")
         self.assertEqual(len(e.items("DecisionLog")), 1)
         self.assertEqual(e.items("ActionItems"), [])
 

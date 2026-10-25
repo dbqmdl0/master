@@ -21,7 +21,9 @@ UI = {
     "FilterArray": "데이터 작업 › **배열 필터링(Filter array)**",
     "Select": "데이터 작업 › **선택(Select)**",
     "Terminate": "컨트롤 › **종료(Terminate)**",
+    "Table": "데이터 작업 › **HTML 표 만들기(Create HTML table)**",
 }
+WEEKDAY_KO = {"Monday": "월", "Tuesday": "화", "Wednesday": "수", "Thursday": "목", "Friday": "금", "Saturday": "토", "Sunday": "일"}
 TRIGGER_UI = {
     "Outlook.WhenAnEmailIsFlaggedV4": "Office 365 Outlook › **When an email is flagged (V4)** (전자 메일에 플래그가 지정된 경우)",
     "SharePoint.WhenAnItemIsCreatedOrModified": "SharePoint › **When an item is created or modified** (항목을 만들거나 수정한 경우)",
@@ -34,7 +36,9 @@ FIELD_UI = {"site": "사이트 주소(Site Address) — '사용자 지정 값 �
             "filter": "필터 쿼리(Filter Query)", "top": "상위 개수(Top Count)", "id": "ID",
             "poster": "게시자(Post as)", "location": "게시 위치(Post in)", "recipient": "받는 사람(Recipient)",
             "card": "Adaptive Card", "message": "메시지(Message)", "workbook": "통합 문서(Workbook) 위치·파일",
-            "script": "스크립트(Script) 위치·파일", "user": "사용자(UPN)", "calendarId": "일정 ID(Calendar id)",
+            "script": "스크립트(Script) — 목록에서 이름 선택(본인 OneDrive '문서/Office Scripts' 폴더의 스크립트만 보임)",
+            "location": "위치(Location)", "documentLibrary": "문서 라이브러리(Document Library)",
+            "file": "파일(File) — 폴더 아이콘으로 선택", "orderBy": "정렬 기준(Order By)", "user": "사용자(UPN)", "calendarId": "일정 ID(Calendar id)",
             "startTime": "시작 시간(Start Time)", "endTime": "종료 시간(End Time)", "to": "받는 사람(To)",
             "subject": "제목(Subject)", "body": "본문(Body) / 파일 콘텐츠(File Content)", "folderPath": "폴더 경로(Folder Path)",
             "name": "파일 이름(File Name)"}
@@ -82,8 +86,16 @@ def rows(actions, prefix, out, depth=0):
         cfg = []
         if t == "Connector":
             lst = a["inputs"].get("list")
+            pres = a.get("preserve")
             for k, v in a["inputs"].items():
-                if k == "item":
+                if k == "item" and pres:
+                    cfg.append(f"⚠ **모든 열을 채운다**(빈 칸 금지 — 비워 둔 칸이 값을 지울 수 있음). 바꾸는 열:")
+                    for fk in pres["changed"]:
+                        cfg.append(f"　{field_label(lst, fk)}: {show(v[fk])}")
+                    rest = [fk for fk in v if fk not in pres["changed"]]
+                    cfg.append(f"　나머지 {len(rest)}개 열({', '.join('`' + r.split('/')[0] + '`' for r in rest)}): 각 열 = **fx** "
+                               f"`{pres['from']}?['열이름']` (선택 열은 `?['열이름']?['Value']`, 사람 열은 `?['열이름']?['Claims']`) — 최신 값 그대로")
+                elif k == "item":
                     for fk, fv in v.items():
                         cfg.append(f"{field_label(lst, fk)}: {show(fv)}")
                 elif k == "parameters":
@@ -100,6 +112,10 @@ def rows(actions, prefix, out, depth=0):
             cfg.append(f"왼쪽 값: **fx** `{a['expression'][1:]}` · 연산자 **같음(is equal to)** · 오른쪽 값: **fx** `true`")
         elif t == "Foreach":
             cfg.append(f"이전 단계에서 출력 선택: **fx** `{a['foreach'][1:]}` · 설정 › 동시성 제어 **켬, 병렬 처리 수준 1**")
+        elif t == "Table":
+            cfg.append(f"보낸 사람(From): {show(a['inputs']['from'])} · 열(Columns): **자동**")
+        elif t == "Select":
+            cfg.append(f"보낸 사람(From): {show(a['inputs']['from'])} · 매핑(Map): {show(a['inputs']['select'])}")
         elif t == "FilterArray":
             cfg.append(f"보낸 사람(From): {show(a['inputs']['from'])} · '고급 모드에서 편집' 후: `{a['inputs']['where']}`")
         elif t == "Terminate":
@@ -127,7 +143,9 @@ def render():
              "> 이 파일은 `tools/render_build_tables.py`가 `flows/*.flow.json`에서 생성한다. **직접 수정하지 말 것.**",
              "> 사용법은 `BUILD_GUIDE.md` 3장. 표의 '액션 이름'은 액션 카드의 **… › 이름 바꾸기(Rename)** 로 똑같이 바꾼다 — 식이 이 이름을 참조한다.",
              "> **fx** 표시 값은 입력란의 **식(fx)** 탭에 붙여넣는다. `@{...}`가 섞인 값은 입력란에 그대로 붙여넣는다(식 토큰으로 바뀌지 않으면 fx 탭에 중괄호 안 식만).",
-             "> `{{...}}` 자리표시자는 `BUILD_GUIDE.md` 1장 값으로 바꾼다.", ""]
+             "> `{{...}}` 자리표시자는 `BUILD_GUIDE.md` 1장 값으로 바꾼다.",
+             "> **만들기 전에** `DEPENDENCY_MATRIX.md`에서 그 흐름의 선행 조건(목록·열·연결·스크립트·선행 흐름)이 모두 준비됐는지 확인한다. 순서는 `START_HERE_V2.md`.",
+             "> `P3A-*`는 A안(최소 구성, 1주차), `P3P-*`는 B안(고급). 같은 트리거를 쓰는 A안·B안 흐름을 동시에 켜지 않는다.", ""]
     for p in sorted((ROOT / "flows").glob("*.flow.json")):
         f = json.loads(p.read_text(encoding="utf-8"))
         t = f["trigger"]
@@ -143,7 +161,8 @@ def render():
             lines.append(f"- Adaptive Card: `{ins['inputCard']}` 파일 내용을 붙여넣기")
         if t["kind"] == "Recurrence":
             r = t["recurrence"]
-            lines.append(f"- 간격 1 / 빈도 **주(Week)** · 표준 시간대 **(UTC+09:00) Seoul** · 요일 월~금 · 시간 {r['schedule']['hours'][0]} · 분 {r['schedule']['minutes'][0]}")
+            days = "·".join(WEEKDAY_KO[d] for d in r["schedule"]["weekDays"])
+            lines.append(f"- 간격 1 / 빈도 **주(Week)** · 표준 시간대 **(UTC+09:00) Seoul** · 요일 {days} · 시간 {r['schedule']['hours'][0]} · 분 {r['schedule']['minutes'][0]}")
         for c in t.get("conditions", []):
             lines.append(f"- 트리거 카드 **… › 설정(Settings) › 트리거 조건(Trigger conditions) › + 추가**: `{c}`")
         if t.get("concurrency") == 1:

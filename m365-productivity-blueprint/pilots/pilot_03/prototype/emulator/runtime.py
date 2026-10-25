@@ -4,7 +4,7 @@
 - 트리거: SharePoint 항목 생성/생성·수정, Outlook 플래그(V4), Teams 선택 메시지, 반복(Recurrence), 수동
 - 트리거 조건(모두 true일 때만 실행), 트리거 동시성(1이면 순차·최신 읽기, 제한 없음이면 병렬 배치에서 스냅샷 읽기)
 - 액션: Compose, InitializeVariable(최상위만), SetVariable, IncrementVariable, AppendToArrayVariable,
-        If, Scope, Foreach, FilterArray, Select, Terminate, Connector
+        If, Scope, Foreach, FilterArray, Select, Table(HTML 표 만들기), Terminate, Connector
 - runAfter(Succeeded/Failed/Skipped/TimedOut) 의존 순서, 건너뜀 전파, Scope 상태 집계, result('범위')
 - 재시도: 기본 지수 정책 4회(408·429·5xx), "retry": {"type": "none"} 이면 재시도 없음
 - 식 오류는 해당 액션 실패(InvalidTemplate)로 처리
@@ -24,6 +24,18 @@ RETRYABLE = {408, 429, 500, 502, 503, 504}
 MAX_RUNS_PER_DRAIN = 200
 # 실제 엔진처럼, 안쪽 액션이 실패한 조건·범위·반복은 상세 대신 일반 메시지를 남긴다(상세는 실행 기록 링크로 확인)
 ACTION_FAILED = {"code": "ActionFailed", "message": "An action failed. No dependent actions succeeded."}
+
+
+def _html_table(rows: list) -> str:
+    """'Create HTML table'(자동 열) 흉내: 첫 행의 키를 머리글로, 값은 HTML 이스케이프."""
+    import html as _h
+    if not rows:
+        return "<table></table>"
+    cols = list(rows[0].keys()) if isinstance(rows[0], dict) else ["Value"]
+    head = "".join(f"<th>{_h.escape(str(c))}</th>" for c in cols)
+    body = "".join("<tr>" + "".join(f"<td>{_h.escape('' if (r.get(c) if isinstance(r, dict) else r) is None else str(r.get(c) if isinstance(r, dict) else r))}</td>"
+                                    for c in cols) + "</tr>" for r in rows)
+    return f"<table><thead><tr>{head}</tr></thead><tbody>{body}</tbody></table>"
 
 
 class Terminate(Exception):
@@ -121,10 +133,12 @@ class Runtime:
                     runs.append(self.run(flow, outputs, read_seq=read_seq))
         return runs
 
-    def fire_parallel(self, trigger_kind: str, outputs_list: list[dict], flow_id: str):
-        """같은 트리거가 동시에 여러 번 발생. 동시성 제한 없는 흐름은 모든 실행이 같은 시점의 데이터를 읽는다."""
+    def fire_parallel(self, trigger_kind: str, outputs_list: list[dict], flow_id: str, force_race=False):
+        """같은 트리거가 동시에 여러 번 발생. 동시성 제한 없는 흐름은 모든 실행이 같은 시점의 데이터를 읽는다.
+        force_race=True: 동시성 1이어도 경합을 재현(다른 흐름·재전송·흐름 재저장 중 겹침처럼 동시성 설정이 막지 못하는 경우).
+        스냅샷은 그 실행이 처음 쓰기 전까지만 적용된다(자기 쓰기 뒤의 조회는 최신 데이터)."""
         flow = next(f for f in self.flows if f.id == flow_id)
-        serial = flow.trigger.get("concurrency") == 1
+        serial = flow.trigger.get("concurrency") == 1 and not force_race
         snapshot = self.sp.seq
         return [self.fire(trigger_kind, o, flow_id, read_seq=None if serial else snapshot)[0] for o in outputs_list]
 
@@ -245,6 +259,12 @@ class Runtime:
                         ctx.current_item.pop()
                 ctx.loop_items.pop(name, None)
                 return self._record(ctx, name, worst, error=ACTION_FAILED if worst == "Failed" else None)
+            if t == "Table":
+                arr = evaluate(a["inputs"]["from"], ctx)
+                if not isinstance(arr, list):
+                    raise ExprError("Create HTML table 입력이 배열이 아님")
+                html = _html_table(arr)
+                return self._record(ctx, name, "Succeeded", html, html)
             if t in ("FilterArray", "Select"):
                 arr = evaluate(a["inputs"]["from"], ctx)
                 if not isinstance(arr, list):
@@ -295,15 +315,17 @@ class Runtime:
             self.sp.faults.check("SharePoint", op, i.get("list"))
             if op == "Get items":
                 return {"value": self.sp.get_items(user, i["site"], i["list"], i.get("filter") or None, i.get("top"),
-                                                   read_seq=getattr(ctx, "read_seq", None))}
+                                                   read_seq=getattr(ctx, "read_seq", None), order_by=i.get("orderBy"))}
             if op == "Get item":
                 rows = self.sp.get_items(user, i["site"], i["list"], f"ID eq {int(i['id'])}")
                 if not rows:
                     raise ConnectorError(404, "ItemNotFound", f"항목 {i['id']} 없음")
                 return rows[0]
             if op == "Create item":
+                ctx.read_seq = None  # 자기 쓰기 이후 조회는 최신 데이터
                 return self.sp.create(user, i["site"], i["list"], i["item"])
             if op == "Update item":
+                ctx.read_seq = None
                 return self.sp.update(user, i["site"], i["list"], i["id"], i["item"])
         if connector == "Office 365 Outlook":
             if op == "Get calendar view of events (V3)":
@@ -315,6 +337,10 @@ class Runtime:
                 return self.teams.post_card(user, i["poster"], i["location"], i["recipient"], i["card"])
             if op == "Post message in a chat or channel":
                 return self.teams.post_message(user, i["poster"], i["recipient"], i["message"])
+        if connector == "Excel Online (Business)" and op == "Run script":
+            if i.get("location") != "OneDrive for Business":
+                raise DefinitionError("Run script: 개인 파일럿 위치는 OneDrive for Business")
+            return self.excel.run_script(user, i["file"], i["script"], i["parameters"], operation="Run script")
         if connector == "Excel Online (Business)" and op == "Run script from SharePoint library":
             return self.excel.run_script(user, i["workbook"], i["script"], i["parameters"])
         if connector == "OneDrive for Business" and op == "Create file":

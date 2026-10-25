@@ -1,7 +1,7 @@
 {
   "id": "P3P-F2",
   "name": "P3P-F2 메일 플래그(Sent Items) → 회신대기 등록",
-  "purpose": "Outlook 'Sent Items' 폴더에서 플래그한 메일을 등록. 같은 메일 재플래그 시 중복 생성 없음.",
+  "purpose": "Outlook 'Sent Items' 폴더에서 플래그한 메일을 등록. 같은 메일의 재실행(재플래그·범주·이동·기한 변경)은 규칙에 따라 맞추고 새로 만들지 않음.",
   "trigger": {
     "kind": "Outlook.WhenAnEmailIsFlaggedV4",
     "inputs": {
@@ -29,10 +29,40 @@
       },
       "runAfter": {}
     },
+    "Key": {
+      "type": "Compose",
+      "note": "중복 방지 고유키(255자 이내)",
+      "inputs": "@{if(greater(length(if(empty(triggerOutputs()?['body/internetMessageId']), concat('fp|', toLower(coalesce(triggerOutputs()?['body/from'], '')), '|', coalesce(triggerOutputs()?['body/receivedDateTime'], ''), '|', coalesce(triggerOutputs()?['body/subject'], '')), concat('imid|', triggerOutputs()?['body/internetMessageId']))), 255), substring(if(empty(triggerOutputs()?['body/internetMessageId']), concat('fp|', toLower(coalesce(triggerOutputs()?['body/from'], '')), '|', coalesce(triggerOutputs()?['body/receivedDateTime'], ''), '|', coalesce(triggerOutputs()?['body/subject'], '')), concat('imid|', triggerOutputs()?['body/internetMessageId'])), 0, 255), if(empty(triggerOutputs()?['body/internetMessageId']), concat('fp|', toLower(coalesce(triggerOutputs()?['body/from'], '')), '|', coalesce(triggerOutputs()?['body/receivedDateTime'], ''), '|', coalesce(triggerOutputs()?['body/subject'], '')), concat('imid|', triggerOutputs()?['body/internetMessageId'])))}",
+      "runAfter": {
+        "Config": [
+          "Succeeded"
+        ]
+      }
+    },
+    "FlagDue": {
+      "type": "Compose",
+      "note": "플래그 기한(없으면 빈 값)",
+      "inputs": "@{if(empty(triggerOutputs()?['body/flag/dueDateTime/dateTime']), '', formatDateTime(triggerOutputs()?['body/flag/dueDateTime/dateTime'], 'yyyy-MM-dd'))}",
+      "runAfter": {
+        "Key": [
+          "Succeeded"
+        ]
+      }
+    },
+    "Today": {
+      "type": "Compose",
+      "note": "오늘(KST)",
+      "inputs": "@{convertFromUtc(utcNow(), 'Korea Standard Time', 'yyyy-MM-dd')}",
+      "runAfter": {
+        "FlagDue": [
+          "Succeeded"
+        ]
+      }
+    },
     "Try": {
       "type": "Scope",
       "runAfter": {
-        "Config": [
+        "Today": [
           "Succeeded"
         ]
       },
@@ -63,73 +93,464 @@
           "inputs": {
             "site": "@{outputs('Config')?['site']}",
             "list": "ActionItems",
-            "filter": "SourceMessageId eq '@{replace(triggerOutputs()?['body/id'], '''', '''''')}'",
-            "top": 1
+            "filter": "SourceKey eq '@{replace(outputs('Key'), '''', '''''')}' or SourceMessageId eq '@{replace(triggerOutputs()?['body/id'], '''', '''''')}'",
+            "orderBy": "ID asc",
+            "top": 5
           },
-          "note": "같은 메일로 이미 만든 액션이 있는지(중복 방지)",
+          "note": "같은 메일로 만든 할 일 찾기(고유키 또는 예전 메일 ID)",
           "runAfter": {
             "Check_message_id": [
               "Succeeded"
             ]
           }
         },
-        "If_duplicate": {
+        "If_has_action": {
           "type": "If",
           "expression": "@greater(length(body('Find_existing')?['value']), 0)",
           "actions": {
-            "Stop_duplicate": {
-              "type": "Terminate",
+            "Get_existing_action": {
+              "type": "Connector",
+              "connector": "SharePoint",
+              "operation": "Get item",
               "inputs": {
-                "runStatus": "Succeeded",
-                "runError": {
-                  "code": "Duplicate",
-                  "message": "이미 등록된 메일"
+                "site": "@{outputs('Config')?['site']}",
+                "list": "ActionItems",
+                "id": "@first(body('Find_existing')?['value'])?['ID']"
+              },
+              "note": "기존 할 일 최신 값",
+              "runAfter": {}
+            },
+            "Sync_plan": {
+              "type": "Compose",
+              "note": "무엇이 바뀌었는지 판정(쓰기 전)",
+              "inputs": {
+                "closed": "@or(equals(body('Get_existing_action')?['Status']?['Value'], '완료'), equals(body('Get_existing_action')?['Status']?['Value'], '취소'))",
+                "flagDone": "@equals(triggerOutputs()?['body/flag/flagStatus'], 'complete')",
+                "dueChanged": "@and(not(empty(outputs('FlagDue'))), not(equals(outputs('FlagDue'), if(empty(body('Get_existing_action')?['FlagDue']), '', convertFromUtc(body('Get_existing_action')?['FlagDue'], 'Korea Standard Time', 'yyyy-MM-dd')))))",
+                "userMovedDue": "@not(equals(if(empty(body('Get_existing_action')?['DueDate']), '', convertFromUtc(body('Get_existing_action')?['DueDate'], 'Korea Standard Time', 'yyyy-MM-dd')), if(empty(body('Get_existing_action')?['FlagDue']), '', convertFromUtc(body('Get_existing_action')?['FlagDue'], 'Korea Standard Time', 'yyyy-MM-dd'))))",
+                "idChanged": "@not(equals(coalesce(body('Get_existing_action')?['SourceMessageId'], ''), triggerOutputs()?['body/id']))",
+                "noticeToday": "@contains(coalesce(body('Get_existing_action')?['SyncNote'], ''), concat('[', outputs('Today'), ']'))"
+              },
+              "runAfter": {
+                "Get_existing_action": [
+                  "Succeeded"
+                ]
+              }
+            },
+            "If_closed": {
+              "type": "If",
+              "expression": "@outputs('Sync_plan')?['closed']",
+              "actions": {
+                "If_not_noticed": {
+                  "type": "If",
+                  "expression": "@not(outputs('Sync_plan')?['noticeToday'])",
+                  "actions": {
+                    "Note_closed": {
+                      "type": "Connector",
+                      "connector": "SharePoint",
+                      "operation": "Update item",
+                      "inputs": {
+                        "site": "@{outputs('Config')?['site']}",
+                        "list": "ActionItems",
+                        "id": "@body('Get_existing_action')?['ID']",
+                        "item": {
+                          "Title": "@body('Get_existing_action')?['Title']",
+                          "ActionID": "@body('Get_existing_action')?['ActionID']",
+                          "DecisionID": "@body('Get_existing_action')?['DecisionID']",
+                          "Owner/Claims": "@body('Get_existing_action')?['Owner']?['Claims']",
+                          "DueDate": "@body('Get_existing_action')?['DueDate']",
+                          "Status/Value": "@body('Get_existing_action')?['Status']?['Value']",
+                          "Priority/Value": "@body('Get_existing_action')?['Priority']?['Value']",
+                          "ActionType/Value": "@body('Get_existing_action')?['ActionType']?['Value']",
+                          "Source/Value": "@body('Get_existing_action')?['Source']?['Value']",
+                          "SourceLink": "@body('Get_existing_action')?['SourceLink']",
+                          "Evidence": "@body('Get_existing_action')?['Evidence']",
+                          "CompletedAt": "@body('Get_existing_action')?['CompletedAt']",
+                          "ReminderCount": "@body('Get_existing_action')?['ReminderCount']",
+                          "LastRemindedAt": "@body('Get_existing_action')?['LastRemindedAt']",
+                          "CreatedVia/Value": "@body('Get_existing_action')?['CreatedVia']?['Value']",
+                          "DueHint": "@body('Get_existing_action')?['DueHint']",
+                          "SourceMessageId": "@body('Get_existing_action')?['SourceMessageId']",
+                          "SourceKey": "@body('Get_existing_action')?['SourceKey']",
+                          "FlagDue": "@body('Get_existing_action')?['FlagDue']",
+                          "PrevStatus": "@body('Get_existing_action')?['PrevStatus']",
+                          "DueHintChecked": "@body('Get_existing_action')?['DueHintChecked']",
+                          "SyncNote": "@{concat(coalesce(body('Get_existing_action')?['SyncNote'], ''), if(empty(body('Get_existing_action')?['SyncNote']), '', ' / '), '[', convertFromUtc(utcNow(), 'Korea Standard Time', 'yyyy-MM-dd'), '] ', '완료·취소된 할 일의 메일이 다시 플래그되었거나 바뀜 — 다시 하려면 상태를 미착수로 바꾸세요')}"
+                        }
+                      },
+                      "note": "자동으로 다시 열지 않고 메모만",
+                      "preserve": {
+                        "from": "body('Get_existing_action')",
+                        "changed": [
+                          "SyncNote"
+                        ]
+                      },
+                      "runAfter": {}
+                    },
+                    "Tell_closed": {
+                      "type": "If",
+                      "expression": "@equals(outputs('Config')?['channel'], 'teams')",
+                      "actions": {
+                        "Tell_closed_teams": {
+                          "type": "Connector",
+                          "connector": "Microsoft Teams",
+                          "operation": "Post message in a chat or channel",
+                          "inputs": {
+                            "poster": "Flow bot",
+                            "location": "Chat with Flow bot",
+                            "recipient": "@{outputs('Config')?['me']}",
+                            "message": "@{concat('완료(또는 취소)한 할 일의 메일이 다시 플래그되었습니다. 다시 할 일이면 목록에서 상태를 바꾸세요: ', body('Get_existing_action')?['Title'])}"
+                          },
+                          "note": "Teams Flow bot 메시지",
+                          "runAfter": {}
+                        }
+                      },
+                      "else": {
+                        "actions": {
+                          "Tell_closed_email": {
+                            "type": "Connector",
+                            "connector": "Office 365 Outlook",
+                            "operation": "Send an email (V2)",
+                            "inputs": {
+                              "to": "@{outputs('Config')?['me']}",
+                              "subject": "[P3 확인 요청] 완료한 할 일 재플래그",
+                              "body": "@{concat('완료(또는 취소)한 할 일의 메일이 다시 플래그되었습니다. 다시 할 일이면 목록에서 상태를 바꾸세요: ', body('Get_existing_action')?['Title'])}"
+                            },
+                            "note": "메일 알림(Workflows 앱 없을 때)",
+                            "runAfter": {}
+                          }
+                        }
+                      },
+                      "note": "본인에게 알림(Teams 메시지 또는 메일) — 설정 channel 이 teams 면 Teams, 아니면 메일",
+                      "runAfter": {
+                        "Note_closed": [
+                          "Succeeded"
+                        ]
+                      }
+                    }
+                  },
+                  "note": "하루 1회만 알림",
+                  "runAfter": {}
                 }
               },
-              "runAfter": {}
+              "note": "완료·취소된 할 일인지",
+              "else": {
+                "actions": {
+                  "If_flag_done": {
+                    "type": "If",
+                    "expression": "@and(outputs('Sync_plan')?['flagDone'], not(outputs('Sync_plan')?['noticeToday']))",
+                    "actions": {
+                      "Note_flag_done": {
+                        "type": "Connector",
+                        "connector": "SharePoint",
+                        "operation": "Update item",
+                        "inputs": {
+                          "site": "@{outputs('Config')?['site']}",
+                          "list": "ActionItems",
+                          "id": "@body('Get_existing_action')?['ID']",
+                          "item": {
+                            "Title": "@body('Get_existing_action')?['Title']",
+                            "ActionID": "@body('Get_existing_action')?['ActionID']",
+                            "DecisionID": "@body('Get_existing_action')?['DecisionID']",
+                            "Owner/Claims": "@body('Get_existing_action')?['Owner']?['Claims']",
+                            "DueDate": "@body('Get_existing_action')?['DueDate']",
+                            "Status/Value": "@body('Get_existing_action')?['Status']?['Value']",
+                            "Priority/Value": "@body('Get_existing_action')?['Priority']?['Value']",
+                            "ActionType/Value": "@body('Get_existing_action')?['ActionType']?['Value']",
+                            "Source/Value": "@body('Get_existing_action')?['Source']?['Value']",
+                            "SourceLink": "@body('Get_existing_action')?['SourceLink']",
+                            "Evidence": "@body('Get_existing_action')?['Evidence']",
+                            "CompletedAt": "@body('Get_existing_action')?['CompletedAt']",
+                            "ReminderCount": "@body('Get_existing_action')?['ReminderCount']",
+                            "LastRemindedAt": "@body('Get_existing_action')?['LastRemindedAt']",
+                            "CreatedVia/Value": "@body('Get_existing_action')?['CreatedVia']?['Value']",
+                            "DueHint": "@body('Get_existing_action')?['DueHint']",
+                            "SourceMessageId": "@body('Get_existing_action')?['SourceMessageId']",
+                            "SourceKey": "@body('Get_existing_action')?['SourceKey']",
+                            "FlagDue": "@body('Get_existing_action')?['FlagDue']",
+                            "PrevStatus": "@body('Get_existing_action')?['PrevStatus']",
+                            "DueHintChecked": "@body('Get_existing_action')?['DueHintChecked']",
+                            "SyncNote": "@{concat(coalesce(body('Get_existing_action')?['SyncNote'], ''), if(empty(body('Get_existing_action')?['SyncNote']), '', ' / '), '[', convertFromUtc(utcNow(), 'Korea Standard Time', 'yyyy-MM-dd'), '] ', 'Outlook에서 플래그 완료 — 목록도 완료로 바꿀지 확인하세요(자동 완료하지 않음)')}"
+                          }
+                        },
+                        "note": "자동 완료하지 않고 메모만",
+                        "preserve": {
+                          "from": "body('Get_existing_action')",
+                          "changed": [
+                            "SyncNote"
+                          ]
+                        },
+                        "runAfter": {}
+                      },
+                      "Tell_flag_done": {
+                        "type": "If",
+                        "expression": "@equals(outputs('Config')?['channel'], 'teams')",
+                        "actions": {
+                          "Tell_flag_done_teams": {
+                            "type": "Connector",
+                            "connector": "Microsoft Teams",
+                            "operation": "Post message in a chat or channel",
+                            "inputs": {
+                              "poster": "Flow bot",
+                              "location": "Chat with Flow bot",
+                              "recipient": "@{outputs('Config')?['me']}",
+                              "message": "@{concat('Outlook에서 플래그를 완료했습니다. 목록의 할 일도 완료로 바꾸세요: ', body('Get_existing_action')?['Title'], ' ', outputs('Config')?['links']?['myActions'])}"
+                            },
+                            "note": "Teams Flow bot 메시지",
+                            "runAfter": {}
+                          }
+                        },
+                        "else": {
+                          "actions": {
+                            "Tell_flag_done_email": {
+                              "type": "Connector",
+                              "connector": "Office 365 Outlook",
+                              "operation": "Send an email (V2)",
+                              "inputs": {
+                                "to": "@{outputs('Config')?['me']}",
+                                "subject": "[P3 확인 요청] 플래그 완료",
+                                "body": "@{concat('Outlook에서 플래그를 완료했습니다. 목록의 할 일도 완료로 바꾸세요: ', body('Get_existing_action')?['Title'], ' ', outputs('Config')?['links']?['myActions'])}"
+                              },
+                              "note": "메일 알림(Workflows 앱 없을 때)",
+                              "runAfter": {}
+                            }
+                          }
+                        },
+                        "note": "본인에게 알림(Teams 메시지 또는 메일) — 설정 channel 이 teams 면 Teams, 아니면 메일",
+                        "runAfter": {
+                          "Note_flag_done": [
+                            "Succeeded"
+                          ]
+                        }
+                      }
+                    },
+                    "note": "플래그 완료 여부",
+                    "else": {
+                      "actions": {
+                        "If_changed": {
+                          "type": "If",
+                          "expression": "@or(outputs('Sync_plan')?['dueChanged'], outputs('Sync_plan')?['idChanged'])",
+                          "actions": {
+                            "Update_sync": {
+                              "type": "Connector",
+                              "connector": "SharePoint",
+                              "operation": "Update item",
+                              "inputs": {
+                                "site": "@{outputs('Config')?['site']}",
+                                "list": "ActionItems",
+                                "id": "@body('Get_existing_action')?['ID']",
+                                "item": {
+                                  "Title": "@body('Get_existing_action')?['Title']",
+                                  "ActionID": "@body('Get_existing_action')?['ActionID']",
+                                  "DecisionID": "@body('Get_existing_action')?['DecisionID']",
+                                  "Owner/Claims": "@body('Get_existing_action')?['Owner']?['Claims']",
+                                  "Status/Value": "@body('Get_existing_action')?['Status']?['Value']",
+                                  "Priority/Value": "@body('Get_existing_action')?['Priority']?['Value']",
+                                  "ActionType/Value": "@body('Get_existing_action')?['ActionType']?['Value']",
+                                  "Source/Value": "@body('Get_existing_action')?['Source']?['Value']",
+                                  "Evidence": "@body('Get_existing_action')?['Evidence']",
+                                  "CompletedAt": "@body('Get_existing_action')?['CompletedAt']",
+                                  "ReminderCount": "@body('Get_existing_action')?['ReminderCount']",
+                                  "LastRemindedAt": "@body('Get_existing_action')?['LastRemindedAt']",
+                                  "CreatedVia/Value": "@body('Get_existing_action')?['CreatedVia']?['Value']",
+                                  "DueHint": "@body('Get_existing_action')?['DueHint']",
+                                  "SourceKey": "@body('Get_existing_action')?['SourceKey']",
+                                  "PrevStatus": "@body('Get_existing_action')?['PrevStatus']",
+                                  "DueHintChecked": "@body('Get_existing_action')?['DueHintChecked']",
+                                  "DueDate": "@if(and(outputs('Sync_plan')?['dueChanged'], not(outputs('Sync_plan')?['userMovedDue'])), outputs('FlagDue'), body('Get_existing_action')?['DueDate'])",
+                                  "FlagDue": "@if(outputs('Sync_plan')?['dueChanged'], outputs('FlagDue'), body('Get_existing_action')?['FlagDue'])",
+                                  "SourceMessageId": "@{triggerOutputs()?['body/id']}",
+                                  "SourceLink": "@{coalesce(triggerOutputs()?['body/webLink'], body('Get_existing_action')?['SourceLink'], '')}",
+                                  "SyncNote": "@if(and(outputs('Sync_plan')?['dueChanged'], outputs('Sync_plan')?['userMovedDue']), concat(coalesce(body('Get_existing_action')?['SyncNote'], ''), if(empty(body('Get_existing_action')?['SyncNote']), '', ' / '), '[', convertFromUtc(utcNow(), 'Korea Standard Time', 'yyyy-MM-dd'), '] ', concat('플래그 기한이 ', outputs('FlagDue'), '(으)로 바뀌었지만 목록 기한을 직접 정해 두어 유지함')), body('Get_existing_action')?['SyncNote'])"
+                                }
+                              },
+                              "note": "플래그 기한·메일 위치 변화만 반영(사람이 정한 기한은 유지)",
+                              "preserve": {
+                                "from": "body('Get_existing_action')",
+                                "changed": [
+                                  "DueDate",
+                                  "FlagDue",
+                                  "SourceMessageId",
+                                  "SourceLink",
+                                  "SyncNote"
+                                ]
+                              },
+                              "runAfter": {}
+                            }
+                          },
+                          "note": "바뀐 것이 없으면 아무것도 쓰지 않음",
+                          "else": {
+                            "actions": {
+                              "Stop_no_change": {
+                                "type": "Terminate",
+                                "inputs": {
+                                  "runStatus": "Succeeded",
+                                  "runError": {
+                                    "code": "NoChange",
+                                    "message": "이미 등록된 메일 — 바뀐 것 없음"
+                                  }
+                                },
+                                "runAfter": {}
+                              }
+                            }
+                          },
+                          "runAfter": {}
+                        }
+                      }
+                    },
+                    "runAfter": {}
+                  }
+                }
+              },
+              "runAfter": {
+                "Sync_plan": [
+                  "Succeeded"
+                ]
+              }
             }
           },
-          "note": "중복이면 성공으로 종료",
+          "note": "이미 있는 할 일이면 맞추기, 없으면 만들기",
+          "else": {
+            "actions": {
+              "Title_text": {
+                "type": "Compose",
+                "note": "제목 없음 대비 + 접두어",
+                "inputs": "@{concat('[회신대기] ', if(empty(triggerOutputs()?['body/subject']), '(제목 없음)', triggerOutputs()?['body/subject']))}",
+                "runAfter": {}
+              },
+              "Due_value": {
+                "type": "Compose",
+                "note": "플래그 기한 → 없으면 기본 기한(+3일)",
+                "inputs": "@{if(empty(outputs('FlagDue')), formatDateTime(addDays(convertFromUtc(utcNow(), 'Korea Standard Time'), 3), 'yyyy-MM-dd'), outputs('FlagDue'))}",
+                "runAfter": {
+                  "Title_text": [
+                    "Succeeded"
+                  ]
+                }
+              },
+              "Create_action": {
+                "type": "Connector",
+                "connector": "SharePoint",
+                "operation": "Create item",
+                "inputs": {
+                  "site": "@{outputs('Config')?['site']}",
+                  "list": "ActionItems",
+                  "item": {
+                    "Title": "@{if(greater(length(outputs('Title_text')), 250), substring(outputs('Title_text'), 0, 250), outputs('Title_text'))}",
+                    "Owner/Claims": "@{outputs('Config')?['me']}",
+                    "Status/Value": "미착수",
+                    "ActionType/Value": "회신대기",
+                    "Source/Value": "이메일",
+                    "CreatedVia/Value": "Outlook 플래그",
+                    "Priority/Value": "보통",
+                    "SourceLink": "@{coalesce(triggerOutputs()?['body/webLink'], '')}",
+                    "Evidence": "@{if(greater(length(coalesce(triggerOutputs()?['body/bodyPreview'], '')), 1000), substring(coalesce(triggerOutputs()?['body/bodyPreview'], ''), 0, 1000), coalesce(triggerOutputs()?['body/bodyPreview'], ''))}",
+                    "SourceMessageId": "@{triggerOutputs()?['body/id']}",
+                    "SourceKey": "@{outputs('Key')}",
+                    "DueDate": "@if(empty(outputs('Due_value')), null, outputs('Due_value'))",
+                    "FlagDue": "@if(empty(outputs('Due_value')), null, outputs('Due_value'))"
+                  }
+                },
+                "note": "할 일 등록",
+                "runAfter": {
+                  "Due_value": [
+                    "Succeeded"
+                  ]
+                }
+              },
+              "Recheck_Create_action": {
+                "type": "Connector",
+                "connector": "SharePoint",
+                "operation": "Get items",
+                "inputs": {
+                  "site": "@{outputs('Config')?['site']}",
+                  "list": "ActionItems",
+                  "filter": "SourceKey eq '@{replace(outputs('Key'), '''', '''''')}'",
+                  "orderBy": "ID asc",
+                  "top": 10
+                },
+                "note": "같은 고유키 항목 다시 조회(사후 중복 점검)",
+                "runAfter": {
+                  "Create_action": [
+                    "Succeeded"
+                  ]
+                }
+              },
+              "If_dup_Create_action": {
+                "type": "If",
+                "expression": "@and(greater(length(body('Recheck_Create_action')?['value']), 1), not(equals(first(body('Recheck_Create_action')?['value'])?['ID'], body('Create_action')?['ID'])))",
+                "actions": {
+                  "Get_Create_action": {
+                    "type": "Connector",
+                    "connector": "SharePoint",
+                    "operation": "Get item",
+                    "inputs": {
+                      "site": "@{outputs('Config')?['site']}",
+                      "list": "ActionItems",
+                      "id": "@body('Create_action')?['ID']"
+                    },
+                    "note": "방금 만든 항목 최신 값",
+                    "runAfter": {}
+                  },
+                  "Cancel_Create_action": {
+                    "type": "Connector",
+                    "connector": "SharePoint",
+                    "operation": "Update item",
+                    "inputs": {
+                      "site": "@{outputs('Config')?['site']}",
+                      "list": "ActionItems",
+                      "id": "@body('Create_action')?['ID']",
+                      "item": {
+                        "Title": "@body('Get_Create_action')?['Title']",
+                        "ActionID": "@body('Get_Create_action')?['ActionID']",
+                        "DecisionID": "@body('Get_Create_action')?['DecisionID']",
+                        "Owner/Claims": "@body('Get_Create_action')?['Owner']?['Claims']",
+                        "DueDate": "@body('Get_Create_action')?['DueDate']",
+                        "Priority/Value": "@body('Get_Create_action')?['Priority']?['Value']",
+                        "ActionType/Value": "@body('Get_Create_action')?['ActionType']?['Value']",
+                        "Source/Value": "@body('Get_Create_action')?['Source']?['Value']",
+                        "SourceLink": "@body('Get_Create_action')?['SourceLink']",
+                        "Evidence": "@body('Get_Create_action')?['Evidence']",
+                        "CompletedAt": "@body('Get_Create_action')?['CompletedAt']",
+                        "ReminderCount": "@body('Get_Create_action')?['ReminderCount']",
+                        "LastRemindedAt": "@body('Get_Create_action')?['LastRemindedAt']",
+                        "CreatedVia/Value": "@body('Get_Create_action')?['CreatedVia']?['Value']",
+                        "DueHint": "@body('Get_Create_action')?['DueHint']",
+                        "SourceMessageId": "@body('Get_Create_action')?['SourceMessageId']",
+                        "SourceKey": "@body('Get_Create_action')?['SourceKey']",
+                        "FlagDue": "@body('Get_Create_action')?['FlagDue']",
+                        "PrevStatus": "@body('Get_Create_action')?['PrevStatus']",
+                        "DueHintChecked": "@body('Get_Create_action')?['DueHintChecked']",
+                        "Status/Value": "취소",
+                        "SyncNote": "@{concat(coalesce(body('Get_Create_action')?['SyncNote'], ''), if(empty(body('Get_Create_action')?['SyncNote']), '', ' / '), '[', convertFromUtc(utcNow(), 'Korea Standard Time', 'yyyy-MM-dd'), '] ', concat('같은 메일로 할 일이 중복 생성되어 자동 취소 — 원본 항목 ID ', string(first(body('Recheck_Create_action')?['value'])?['ID'])))}"
+                      }
+                    },
+                    "note": "중복 생성분을 취소로 표시(삭제하지 않음)",
+                    "preserve": {
+                      "from": "body('Get_Create_action')",
+                      "changed": [
+                        "Status/Value",
+                        "SyncNote"
+                      ]
+                    },
+                    "runAfter": {
+                      "Get_Create_action": [
+                        "Succeeded"
+                      ]
+                    }
+                  }
+                },
+                "note": "먼저 만든 항목이 따로 있으면 이 항목을 취소 처리",
+                "runAfter": {
+                  "Recheck_Create_action": [
+                    "Succeeded"
+                  ]
+                }
+              }
+            }
+          },
           "runAfter": {
             "Find_existing": [
-              "Succeeded"
-            ]
-          }
-        },
-        "Title_text": {
-          "type": "Compose",
-          "note": "제목 없음 대비 + 접두어",
-          "inputs": "@{concat('[회신대기] ', if(empty(triggerOutputs()?['body/subject']), '(제목 없음)', triggerOutputs()?['body/subject']))}",
-          "runAfter": {
-            "If_duplicate": [
-              "Succeeded"
-            ]
-          }
-        },
-        "Create_action": {
-          "type": "Connector",
-          "connector": "SharePoint",
-          "operation": "Create item",
-          "inputs": {
-            "site": "@{outputs('Config')?['site']}",
-            "list": "ActionItems",
-            "item": {
-              "Title": "@{if(greater(length(outputs('Title_text')), 250), substring(outputs('Title_text'), 0, 250), outputs('Title_text'))}",
-              "Owner/Claims": "@{outputs('Config')?['me']}",
-              "Status/Value": "미착수",
-              "ActionType/Value": "회신대기",
-              "Source/Value": "이메일",
-              "CreatedVia/Value": "Outlook 플래그",
-              "Priority/Value": "보통",
-              "SourceLink": "@{coalesce(triggerOutputs()?['body/webLink'], '')}",
-              "Evidence": "@{coalesce(triggerOutputs()?['body/bodyPreview'], '')}",
-              "SourceMessageId": "@{triggerOutputs()?['body/id']}",
-              "DueDate": "@if(empty(triggerOutputs()?['body/flag/dueDateTime/dateTime']), formatDateTime(addDays(convertFromUtc(utcNow(), 'Korea Standard Time'), 3), 'yyyy-MM-dd'), formatDateTime(triggerOutputs()?['body/flag/dueDateTime/dateTime'], 'yyyy-MM-dd'))"
-            }
-          },
-          "note": "액션 등록",
-          "runAfter": {
-            "Title_text": [
               "Succeeded"
             ]
           }
@@ -147,12 +568,22 @@
       "actions": {
         "Failed_actions": {
           "type": "FilterArray",
-          "note": "Try 안에서 실패한 액션만 추림",
+          "note": "Try 안에서 실패·시간 초과된 액션만 추림",
           "inputs": {
             "from": "@result('Try')",
-            "where": "@equals(item()?['status'], 'Failed')"
+            "where": "@or(equals(item()?['status'], 'Failed'), equals(item()?['status'], 'TimedOut'))"
           },
           "runAfter": {}
+        },
+        "Error_text": {
+          "type": "Compose",
+          "note": "오류 요약(민감 내용 없이 300자 이내). 조건·반복 안쪽 실패는 엔진이 상세를 올려 주지 않으므로 위치를 안내",
+          "inputs": "@{if(greater(length(if(empty(body('Failed_actions')), '실패 액션을 식별하지 못했습니다(실행 기록 링크 확인)', if(equals(first(body('Failed_actions'))?['error']?['code'], 'ActionFailed'), concat('[', first(body('Failed_actions'))?['name'], '] 안쪽 단계가 실패했습니다 — 실행 기록 링크에서 빨간 단계의 오류를 확인하세요'), concat(coalesce(first(body('Failed_actions'))?['error']?['code'], ''), ' ', coalesce(first(body('Failed_actions'))?['error']?['message'], '상세 메시지 없음'))))), 300), substring(if(empty(body('Failed_actions')), '실패 액션을 식별하지 못했습니다(실행 기록 링크 확인)', if(equals(first(body('Failed_actions'))?['error']?['code'], 'ActionFailed'), concat('[', first(body('Failed_actions'))?['name'], '] 안쪽 단계가 실패했습니다 — 실행 기록 링크에서 빨간 단계의 오류를 확인하세요'), concat(coalesce(first(body('Failed_actions'))?['error']?['code'], ''), ' ', coalesce(first(body('Failed_actions'))?['error']?['message'], '상세 메시지 없음')))), 0, 300), if(empty(body('Failed_actions')), '실패 액션을 식별하지 못했습니다(실행 기록 링크 확인)', if(equals(first(body('Failed_actions'))?['error']?['code'], 'ActionFailed'), concat('[', first(body('Failed_actions'))?['name'], '] 안쪽 단계가 실패했습니다 — 실행 기록 링크에서 빨간 단계의 오류를 확인하세요'), concat(coalesce(first(body('Failed_actions'))?['error']?['code'], ''), ' ', coalesce(first(body('Failed_actions'))?['error']?['message'], '상세 메시지 없음')))))}",
+          "runAfter": {
+            "Failed_actions": [
+              "Succeeded"
+            ]
+          }
         },
         "Log_error": {
           "type": "Connector",
@@ -164,8 +595,8 @@
             "item": {
               "Title": "@{workflow()?['tags']?['flowDisplayName']}",
               "FlowRunId": "@{workflow()?['run']?['name']}",
-              "FailedAction": "@{coalesce(first(body('Failed_actions'))?['name'], '')}",
-              "ErrorMessage": "@{coalesce(first(body('Failed_actions'))?['error']?['message'], '상세 메시지 없음(실행 기록 확인)')}",
+              "FailedAction": "@{coalesce(first(body('Failed_actions'))?['name'], '(식별 불가)')}",
+              "ErrorMessage": "@{outputs('Error_text')}",
               "Severity/Value": "Critical",
               "Resolved": false,
               "RunUrl": "@{concat('https://make.powerautomate.com/environments/', workflow()?['tags']?['environmentName'], '/flows/', workflow()?['name'], '/runs/', workflow()?['run']?['name'])}"
@@ -173,9 +604,26 @@
           },
           "note": "공통 오류 로그 기록",
           "runAfter": {
-            "Failed_actions": [
+            "Error_text": [
               "Succeeded"
             ]
+          }
+        },
+        "Log_failed_email": {
+          "type": "Connector",
+          "connector": "Office 365 Outlook",
+          "operation": "Send an email (V2)",
+          "runAfter": {
+            "Log_error": [
+              "Failed",
+              "TimedOut"
+            ]
+          },
+          "note": "오류 로그 기록 실패 시 본인 메일로 직접 알림(내용 없이 흐름 이름·실행 링크만)",
+          "inputs": {
+            "to": "@{outputs('Config')?['me']}",
+            "subject": "@{concat('[P3 오류] ', workflow()?['tags']?['flowDisplayName'], ' — 오류 로그 기록도 실패')}",
+            "body": "@{concat('실패 액션: ', coalesce(first(body('Failed_actions'))?['name'], '(식별 불가)'), '<br>FlowErrorLog 목록 권한·연결을 확인하세요.<br>실행 기록: https://make.powerautomate.com/environments/', workflow()?['tags']?['environmentName'], '/flows/', workflow()?['name'], '/runs/', workflow()?['run']?['name'])}"
           }
         },
         "Terminate_failed": {
@@ -184,14 +632,15 @@
             "runStatus": "Failed",
             "runError": {
               "code": "FlowFailed",
-              "message": "@{concat('실패 액션: ', coalesce(first(body('Failed_actions'))?['name'], '?'))}"
+              "message": "@{concat('실패 액션: ', coalesce(first(body('Failed_actions'))?['name'], '(식별 불가)'))}"
             }
           },
           "runAfter": {
-            "Log_error": [
+            "Log_failed_email": [
               "Succeeded",
               "Failed",
-              "Skipped"
+              "Skipped",
+              "TimedOut"
             ]
           }
         }

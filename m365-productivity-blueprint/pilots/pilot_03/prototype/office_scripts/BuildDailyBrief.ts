@@ -7,6 +7,16 @@
  * 실행 대상 통합 문서(P3_AutomationHost.xlsx)는 '계산 호스트'일 뿐이며 이 스크립트는 통합 문서를 수정하지 않는다.
  *
  * 규칙은 automation_assets/python/daily_brief.py 와 같다(로컬 교차 검증 테스트로 확인).
+ *
+ * TOP5 규칙(P0-3, 문서: START_HERE_V2.md '아침 브리핑 읽는 법')
+ *  - 후보: 내 미결 할 일(기한 있음·없음 모두) + 내가 결정할 결정요청 + SLA 요청
+ *  - 점수: 기한초과 100+5/일, SLA초과 90, 오늘마감 80, 결정대기 70+3/일, SLA임박 60, 회신대기 40+2/일,
+ *          기한미정 30+2/등록 후 경과일(최대 +40)
+ *  - 사용자 우선순위: '높음' +15, '낮음' −10 (모든 할 일에 적용)
+ *  - 기한이 미래인(내일 이후) 할 일은 TOP5 후보가 아니다(오늘 할 일이 아님)
+ *  - 기한 없는 할 일은 기한을 만들어 넣지 않는다. TOP5에 들지 못해도 '기한 없는 할 일' 칸에 따로 3건까지 보여 준다
+ *  - 방치 경고: 기한 없이 14일 이상, 또는 우선순위 '높음'인데 기한 없이 7일 이상
+ *  - 동점이면 번호 오름차순
  */
 
 interface BriefItem {
@@ -25,6 +35,9 @@ interface BriefCounts {
   slaOverdue: number;
   slaDueSoon: number;
   replyWaiting: number;
+  undated: number;
+  neglectedUndated: number;
+  proposalsToConfirm: number;
 }
 
 interface BriefResult {
@@ -34,6 +47,8 @@ interface BriefResult {
   top: BriefItem[];
   counts: BriefCounts;
   undatedOpenActions: number;
+  undatedTop: BriefItem[];
+  neglected: BriefItem[];
   meetingCount: number;
   meetingHours: number;
   focusBlocks: string[];
@@ -51,6 +66,14 @@ const SCORE_DECISION_WAITING_PER_DAY = 3;
 const SCORE_REQUEST_DUE_SOON = 60;
 const SCORE_REPLY_WAITING = 40;
 const SCORE_REPLY_WAITING_PER_DAY = 2;
+const SCORE_UNDATED = 30;
+const SCORE_UNDATED_PER_DAY = 2;
+const SCORE_UNDATED_AGE_CAP = 40;
+const PRIORITY_BONUS_HIGH = 15;
+const PRIORITY_BONUS_LOW = -10;
+const NEGLECT_DAYS = 14;
+const NEGLECT_DAYS_HIGH = 7;
+const UNDATED_SHOW = 3;
 const OPEN_ACTION: string[] = ["미착수", "진행중"];
 const TOP_N = 5;
 const SECTION_MAX = 8;
@@ -59,7 +82,7 @@ const WORK_END_MIN = 18 * 60;
 const FOCUS_MIN_MINUTES = 60;
 const CARD_LIMIT_BYTES = 28 * 1024;
 const KST_OFFSET_MS = 9 * 3600 * 1000;
-const KINDS: string[] = ["기한초과", "오늘마감", "결정대기", "SLA초과", "SLA임박", "회신대기"];
+const KINDS: string[] = ["기한초과", "오늘마감", "결정대기", "SLA초과", "SLA임박", "회신대기", "기한미정"];
 
 function main(workbook: ExcelScript.Workbook, meEmail: string, todayKst: string, eventsJson: string,
   actionsJson: string, decisionsJson: string, requestsJson: string, holidaysJson: string,
@@ -152,15 +175,17 @@ function buildBrief(meEmail: string, today: string, events: Raw[], actions: Raw[
   const me = meEmail.trim().toLowerCase();
   const tally: { [k: string]: number } = {};
   KINDS.forEach(k => { tally[k] = 0; });
-  const empty: BriefResult = { skip: true, reason: "", today, top: [], counts: toCounts(tally), undatedOpenActions: 0,
-    meetingCount: 0, meetingHours: 0, focusBlocks: [], organizerWithoutAgenda: [], cardJson: "", htmlSummary: "" };
+  const empty: BriefResult = { skip: true, reason: "", today, top: [], counts: toCounts(tally, 0, 0), undatedOpenActions: 0,
+    undatedTop: [], neglected: [], meetingCount: 0, meetingHours: 0, focusBlocks: [], organizerWithoutAgenda: [], cardJson: "", htmlSummary: "" };
   if (!/^\d{4}-\d{2}-\d{2}$/.test(today)) throw new Error(`todayKst 형식 오류: ${today}`);
   const holidaySet = holidays.map(h => kstDate(h["HolidayDate"] !== undefined ? h["HolidayDate"] : h["date"]));
   if (isWeekend(today)) { empty.reason = "주말"; return empty; }
   if (holidaySet.indexOf(today) >= 0) { empty.reason = "휴무일"; return empty; }
 
   const items: BriefItem[] = [];
-  let undated = 0;
+  const undatedItems: BriefItem[] = [];
+  const neglected: BriefItem[] = [];
+  let proposals = 0;
   actions.forEach(a => {
     const owner = lower(a["Owner"]);
     if (owner !== "" && owner !== me) return;
@@ -170,19 +195,32 @@ function buildBrief(meEmail: string, today: string, events: Raw[], actions: Raw[
     const id = text(a["ActionID"]) || `ID-${text(a["ID"])}`;
     const title = text(a["Title"]);
     const url = text(a["SourceLink"]);
-    if (due === "") { undated++; return; }
+    const prio = text(a["Priority"]);
+    const bonus = prio === "높음" ? PRIORITY_BONUS_HIGH : prio === "낮음" ? PRIORITY_BONUS_LOW : 0;
+    const mark = prio === "높음" ? " [높음]" : "";
+    if (due === "") {
+      const created = kstDate(a["Created"]);
+      const age = created === "" ? 0 : Math.max(0, daysBetween(created, today));
+      const it: BriefItem = { score: SCORE_UNDATED + Math.min(SCORE_UNDATED_AGE_CAP, SCORE_UNDATED_PER_DAY * age) + bonus,
+        kind: "기한미정", id, text: `${title} (기한 없음 · 등록 ${age}일째)${mark}`, url };
+      undatedItems.push(it);
+      items.push(it);
+      if (age >= NEGLECT_DAYS || (prio === "높음" && age >= NEGLECT_DAYS_HIGH)) neglected.push(it);
+      return;
+    }
     const late = daysBetween(due, today);
     if (text(a["ActionType"]) === "회신대기") {
-      if (late >= 0) items.push({ score: SCORE_REPLY_WAITING + SCORE_REPLY_WAITING_PER_DAY * late, kind: "회신대기",
-        id, text: `${title} (회신 대기 ${late}일)`, url });
+      if (late >= 0) items.push({ score: SCORE_REPLY_WAITING + SCORE_REPLY_WAITING_PER_DAY * late + bonus, kind: "회신대기",
+        id, text: `${title} (회신 대기 ${late}일)${mark}`, url });
     } else if (late > 0) {
-      items.push({ score: SCORE_ACTION_OVERDUE + SCORE_ACTION_OVERDUE_PER_DAY * late, kind: "기한초과", id,
-        text: `${title} (${late}일 초과)`, url });
+      items.push({ score: SCORE_ACTION_OVERDUE + SCORE_ACTION_OVERDUE_PER_DAY * late + bonus, kind: "기한초과", id,
+        text: `${title} (${late}일 초과)${mark}`, url });
     } else if (late === 0) {
-      items.push({ score: SCORE_ACTION_DUE_TODAY, kind: "오늘마감", id, text: title, url });
+      items.push({ score: SCORE_ACTION_DUE_TODAY + bonus, kind: "오늘마감", id, text: `${title}${mark}`, url });
     }
   });
   decisions.forEach(d => {
+    if (text(d["Status"]) === "제안") { proposals++; return; }
     if (text(d["Status"]) !== "결정요청") return;
     const decider = lower(d["Decider"]);
     if (decider !== "" && decider !== me) return;
@@ -199,9 +237,12 @@ function buildBrief(meEmail: string, today: string, events: Raw[], actions: Raw[
     if (state === "overdue") items.push({ score: SCORE_REQUEST_OVERDUE, kind: "SLA초과", id, text: title, url: "" });
     else if (state === "due_soon") items.push({ score: SCORE_REQUEST_DUE_SOON, kind: "SLA임박", id, text: title, url: "" });
   });
-  items.sort((x, y) => (y.score - x.score) || (x.id < y.id ? -1 : x.id > y.id ? 1 : 0));
+  const byScore = (x: BriefItem, y: BriefItem) => (y.score - x.score) || (x.id < y.id ? -1 : x.id > y.id ? 1 : 0);
+  items.sort(byScore);
+  undatedItems.sort(byScore);
+  neglected.sort(byScore);
   items.forEach(i => { tally[i.kind] = (tally[i.kind] || 0) + 1; });
-  const counts = toCounts(tally);
+  const counts = toCounts(tally, neglected.length, proposals);
 
   // 일정: KST 오늘 시작하는 종일이 아닌 일정만
   const todays = events.filter(e => e["isAllDay"] !== true && kstDate(e["start"]) === today)
@@ -227,7 +268,8 @@ function buildBrief(meEmail: string, today: string, events: Raw[], actions: Raw[
   const noAgenda = todays.filter(e => e.organizer === me && !e.hasAgenda).map(e => e.subject).slice(0, SECTION_MAX);
 
   const result: BriefResult = {
-    skip: false, reason: "", today, top: items.slice(0, TOP_N), counts, undatedOpenActions: undated,
+    skip: false, reason: "", today, top: items.slice(0, TOP_N), counts, undatedOpenActions: undatedItems.length,
+    undatedTop: undatedItems.slice(0, UNDATED_SHOW), neglected: neglected.slice(0, SECTION_MAX),
     meetingCount: todays.length, meetingHours, focusBlocks: free, organizerWithoutAgenda: noAgenda, cardJson: "",
     htmlSummary: "",
   };
@@ -246,7 +288,16 @@ function toCard(b: BriefResult, events: { time: string; subject: string }[], lin
   if (b.top.length > 0) body.push({ type: "FactSet", facts: b.top.map(i => ({ title: i.kind, value: cut(i.text, 120) })) });
   else body.push({ type: "TextBlock", text: "급한 미결 항목이 없습니다. 전략 과제에 시간을 쓰세요.", wrap: true });
   if (b.undatedOpenActions > 0) {
-    body.push({ type: "TextBlock", text: `기한 미정 액션 ${b.undatedOpenActions}건 — 기한을 정해 주세요.`, wrap: true, isSubtle: true, size: "Small" });
+    body.push({ type: "TextBlock", text: `기한 없는 할 일 ${b.undatedOpenActions}건 (기한은 직접 정하세요)`, weight: "Bolder", spacing: "Medium" });
+    body.push({ type: "FactSet", facts: b.undatedTop.map(i => ({ title: "기한미정", value: cut(i.text, 120) })) });
+  }
+  if (b.neglected.length > 0) {
+    body.push({ type: "TextBlock", color: "Warning", wrap: true,
+      text: `방치 경고 ${b.neglected.length}건: ` + b.neglected.slice(0, 3).map(i => cut(i.text, 60)).join(", ") + " — 기한을 정하거나 취소하세요." });
+  }
+  if (b.counts.proposalsToConfirm > 0) {
+    body.push({ type: "TextBlock", wrap: true, isSubtle: true, size: "Small",
+      text: `확정 대기 제안 ${b.counts.proposalsToConfirm}건 — 결정 레지스터에서 확정·보류를 정하세요.` });
   }
   body.push({ type: "TextBlock", text: `집중 가능 시간: ${b.focusBlocks.join(", ") || "없음(일정 재조정 검토)"}`, wrap: true, spacing: "Medium" });
   if (events.length > 0) body.push({ type: "FactSet", facts: events.map(e => ({ title: e.time, value: cut(e.subject, 80) })) });
@@ -264,9 +315,10 @@ function toCard(b: BriefResult, events: { time: string; subject: string }[], lin
   return json;
 }
 
-function toCounts(t: { [k: string]: number }): BriefCounts {
+function toCounts(t: { [k: string]: number }, neglected: number, proposals: number): BriefCounts {
   return { overdue: t["기한초과"], dueToday: t["오늘마감"], decisionWaiting: t["결정대기"],
-    slaOverdue: t["SLA초과"], slaDueSoon: t["SLA임박"], replyWaiting: t["회신대기"] };
+    slaOverdue: t["SLA초과"], slaDueSoon: t["SLA임박"], replyWaiting: t["회신대기"], undated: t["기한미정"],
+    neglectedUndated: neglected, proposalsToConfirm: proposals };
 }
 
 function esc(s: string): string {
@@ -277,6 +329,10 @@ function toHtml(b: BriefResult): string {
   const li = b.top.map(i => `<li><b>${esc(i.kind)}</b> ${esc(i.text)}</li>`).join("");
   return `<h3>아침 브리핑 ${esc(b.today)}</h3><p>회의 ${b.meetingCount}건(${b.meetingHours}h)</p>` +
     (li ? `<ol>${li}</ol>` : "<p>급한 미결 항목이 없습니다.</p>") +
+    (b.undatedOpenActions > 0 ? `<p><b>기한 없는 할 일 ${b.undatedOpenActions}건</b></p><ul>` +
+      b.undatedTop.map(i => `<li>${esc(i.text)}</li>`).join("") + "</ul>" : "") +
+    (b.neglected.length > 0 ? `<p><b>방치 경고 ${b.neglected.length}건</b> — 기한을 정하거나 취소하세요.</p>` : "") +
+    (b.counts.proposalsToConfirm > 0 ? `<p>확정 대기 제안 ${b.counts.proposalsToConfirm}건</p>` : "") +
     `<p>집중 가능 시간: ${esc(b.focusBlocks.join(", ") || "없음")}</p>`;
 }
 

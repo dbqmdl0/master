@@ -11,6 +11,9 @@
  L7 트리거 목록·트리거 조건 열이 스키마에 존재
  L8 Try/Catch 골격: Catch 실행 조건이 Try 실패·시간초과, Catch 마지막은 Terminate(Failed)
  L9 자리표시자는 허용 목록만
+ L10 Update item 은 목록의 모든 열을 입력(최신 값 보존 패턴, P0-5) — 생략한 열이 지워지는 경우까지 안전
+ L11 Office Scripts 실행 액션은 개인 파일럿 기본인 'Run script'(OneDrive) — 스크립트는 이름으로 지정
+ L12 메일·Teams 알림의 받는 사람은 본인(설정 me). 예외는 프로토타입 모드 검사(If_allowed) 안쪽뿐
 """
 from __future__ import annotations
 
@@ -146,7 +149,18 @@ def lint_flow(f, lists) -> list[str]:
             for col in re.findall(r"(?:^|\(|\s)([A-Z][A-Za-z]+)(?:/EMail)?\s+(?:eq|ne|lt|le|gt|ge)\s", flt):
                 if col not in cols and col not in SYSTEM:
                     errs.append(f"L5 {where}: 필터 열 없음 {lst}.{col}")
+            if a["operation"] == "Update item":
+                missing = [c for c in cols if c not in given]
+                if missing:
+                    errs.append(f"L10 {where}: Update item 에 빠진 열 {missing} (preserve() 사용)")
         if a["type"] == "Connector" and a["operation"] == "Run script from SharePoint library":
+            errs.append(f"L11 {where}: 개인 파일럿은 'Run script'(OneDrive) 사용 — SharePoint 라이브러리 실행은 팀 단계")
+        if a["type"] == "Connector" and a["operation"] in ("Send an email (V2)", "Post card in a chat or channel",
+                                                            "Post message in a chat or channel"):
+            to = a["inputs"].get("to", a["inputs"].get("recipient"))
+            if to != "@{outputs('Config')?['me']}" and "If_allowed" not in path:
+                errs.append(f"L12 {where}: 받는 사람이 본인이 아님({to}) — 프로토타입 모드 검사 밖")
+        if a["type"] == "Connector" and a["operation"] in ("Run script", "Run script from SharePoint library"):
             sname = Path(a["inputs"]["script"].split("/")[-1]).stem
             want = script_params(sname)
             if want is None:

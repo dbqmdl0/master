@@ -1,5 +1,5 @@
-﻿Title,ActionID,DecisionID,Owner,DueDate,Status,Priority,ActionType,Source,SourceLink,Evidence,CompletedAt,ReminderCount,LastRemindedAt,CreatedVia,DueHint,SourceMessageId,PrevStatus,DueHintChecked
-[가상] PLT-B 11월 CAPA 확인,,,seoyeon.han@example.com,2026-10-22,진행중,높음,실행,회의,,,,,,,,,,
-[가상] 해외-1 이월 수량 안내,,,seoyeon.han@example.com,2026-10-26,미착수,보통,실행,회의,,,,,,,,,,
-[가상] 구매팀 포장재 단가 회신,,,seoyeon.han@example.com,2026-10-21,진행중,보통,회신대기,이메일,,,,,,,,,,
-[가상] 12월 계획 초안,,,seoyeon.han@example.com,2026-11-05,미착수,보통,실행,기타,,,,,,,,,,
+﻿Title,ActionID,DecisionID,Owner,DueDate,Status,Priority,ActionType,Source,SourceLink,Evidence,CompletedAt,ReminderCount,LastRemindedAt,CreatedVia,DueHint,SourceMessageId,SourceKey,FlagDue,SyncNote,PrevStatus,DueHintChecked
+[가상] PLT-B 11월 CAPA 확인,,,seoyeon.han@example.com,2026-10-22,진행중,높음,실행,회의,,,,,,,,,,,,,
+[가상] 해외-1 이월 수량 안내,,,seoyeon.han@example.com,2026-10-26,미착수,보통,실행,회의,,,,,,,,,,,,,
+[가상] 구매팀 포장재 단가 회신,,,seoyeon.han@example.com,2026-10-21,진행중,보통,회신대기,이메일,,,,,,,,,,,,,
+[가상] 12월 계획 초안,,,seoyeon.han@example.com,2026-11-05,미착수,보통,실행,기타,,,,,,,,,,,,,

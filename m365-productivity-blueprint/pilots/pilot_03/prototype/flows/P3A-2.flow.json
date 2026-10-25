@@ -1,0 +1,367 @@
+{
+  "id": "P3A-2",
+  "name": "P3A-2 (A안) 간단 아침 메일 — Office Scripts 없이",
+  "purpose": "A안 1주차용 아침 메일. 표준 액션(필터·선택·HTML 표)만 사용. 기한 지남·임박·기한 없음(방치 경고 포함)을 본인에게. 휴무일 건너뛰기·점수·일정·집중 시간은 B안(P3P-F6).",
+  "trigger": {
+    "kind": "Recurrence",
+    "recurrence": {
+      "frequency": "Week",
+      "interval": 1,
+      "timeZone": "Korea Standard Time",
+      "schedule": {
+        "weekDays": [
+          "Monday",
+          "Tuesday",
+          "Wednesday",
+          "Thursday",
+          "Friday"
+        ],
+        "hours": [
+          7
+        ],
+        "minutes": [
+          40
+        ]
+      }
+    }
+  },
+  "actions": {
+    "Config": {
+      "type": "Compose",
+      "note": "설정값 모음. 샌드박스→운영 전환 시 이 값만 바꾼다(트리거의 사이트·목록은 직접 다시 선택).",
+      "inputs": {
+        "site": "{{SITE_URL}}",
+        "me": "{{ME}}",
+        "hostWorkbook": "{{HOST_WORKBOOK}}",
+        "scriptFolder": "{{SCRIPT_FOLDER}}",
+        "prototypeMode": true,
+        "channel": "{{NOTIFY_CHANNEL}}",
+        "factoryFolder": "{{FACTORY_FOLDER}}",
+        "links": {
+          "myActions": "{{VIEW_MY_ACTIONS}}",
+          "decisionQueue": "{{VIEW_DECISION_QUEUE}}",
+          "candidates": "{{VIEW_CANDIDATES}}"
+        }
+      },
+      "runAfter": {}
+    },
+    "Today": {
+      "type": "Compose",
+      "inputs": "@{convertFromUtc(utcNow(), 'Korea Standard Time', 'yyyy-MM-dd')}",
+      "note": "오늘(KST)",
+      "runAfter": {
+        "Config": [
+          "Succeeded"
+        ]
+      }
+    },
+    "Soon": {
+      "type": "Compose",
+      "inputs": "@{addDays(outputs('Today'), 2, 'yyyy-MM-dd')}",
+      "note": "2일 뒤",
+      "runAfter": {
+        "Today": [
+          "Succeeded"
+        ]
+      }
+    },
+    "Ago7": {
+      "type": "Compose",
+      "inputs": "@{addDays(outputs('Today'), -7, 'yyyy-MM-dd')}",
+      "note": "7일 전",
+      "runAfter": {
+        "Soon": [
+          "Succeeded"
+        ]
+      }
+    },
+    "Ago14": {
+      "type": "Compose",
+      "inputs": "@{addDays(outputs('Today'), -14, 'yyyy-MM-dd')}",
+      "note": "14일 전",
+      "runAfter": {
+        "Ago7": [
+          "Succeeded"
+        ]
+      }
+    },
+    "Try": {
+      "type": "Scope",
+      "runAfter": {
+        "Ago14": [
+          "Succeeded"
+        ]
+      },
+      "actions": {
+        "Get_open": {
+          "type": "Connector",
+          "connector": "SharePoint",
+          "operation": "Get items",
+          "inputs": {
+            "site": "@{outputs('Config')?['site']}",
+            "list": "ActionItems",
+            "filter": "Owner/EMail eq '@{outputs('Config')?['me']}' and (Status eq '미착수' or Status eq '진행중')",
+            "orderBy": "DueDate asc",
+            "top": 500
+          },
+          "note": "내 미결 할 일(기한 오름차순)",
+          "runAfter": {}
+        },
+        "Overdue": {
+          "type": "FilterArray",
+          "note": "기한 지남",
+          "inputs": {
+            "from": "@body('Get_open')?['value']",
+            "where": "@and(not(empty(item()?['DueDate'])), less(convertFromUtc(item()?['DueDate'], 'Korea Standard Time', 'yyyy-MM-dd'), outputs('Today')))"
+          },
+          "runAfter": {
+            "Get_open": [
+              "Succeeded"
+            ]
+          }
+        },
+        "Due_soon": {
+          "type": "FilterArray",
+          "note": "오늘~2일 뒤 마감",
+          "inputs": {
+            "from": "@body('Get_open')?['value']",
+            "where": "@and(not(empty(item()?['DueDate'])), greaterOrEquals(convertFromUtc(item()?['DueDate'], 'Korea Standard Time', 'yyyy-MM-dd'), outputs('Today')), lessOrEquals(convertFromUtc(item()?['DueDate'], 'Korea Standard Time', 'yyyy-MM-dd'), outputs('Soon')))"
+          },
+          "runAfter": {
+            "Overdue": [
+              "Succeeded"
+            ]
+          }
+        },
+        "Undated": {
+          "type": "FilterArray",
+          "note": "기한 없음 — 기한을 만들어 넣지 않고 따로 보여 준다",
+          "inputs": {
+            "from": "@body('Get_open')?['value']",
+            "where": "@empty(item()?['DueDate'])"
+          },
+          "runAfter": {
+            "Due_soon": [
+              "Succeeded"
+            ]
+          }
+        },
+        "Neglected": {
+          "type": "FilterArray",
+          "note": "방치 경고: 기한 없이 14일 이상, 또는 우선순위 높음인데 7일 이상",
+          "inputs": {
+            "from": "@body('Undated')",
+            "where": "@or(lessOrEquals(convertFromUtc(item()?['Created'], 'Korea Standard Time', 'yyyy-MM-dd'), outputs('Ago14')), and(equals(item()?['Priority']?['Value'], '높음'), lessOrEquals(convertFromUtc(item()?['Created'], 'Korea Standard Time', 'yyyy-MM-dd'), outputs('Ago7'))))"
+          },
+          "runAfter": {
+            "Undated": [
+              "Succeeded"
+            ]
+          }
+        },
+        "Rows_overdue": {
+          "type": "Select",
+          "note": "표 열",
+          "inputs": {
+            "from": "@body('Overdue')",
+            "select": {
+              "할 일": "@item()?['Title']",
+              "기한": "@convertFromUtc(item()?['DueDate'], 'Korea Standard Time', 'yyyy-MM-dd')",
+              "상태": "@item()?['Status']?['Value']",
+              "우선순위": "@coalesce(item()?['Priority']?['Value'], '보통')",
+              "링크": "@coalesce(item()?['SourceLink'], '')"
+            }
+          },
+          "runAfter": {
+            "Neglected": [
+              "Succeeded"
+            ]
+          }
+        },
+        "Rows_soon": {
+          "type": "Select",
+          "note": "표 열",
+          "inputs": {
+            "from": "@body('Due_soon')",
+            "select": {
+              "할 일": "@item()?['Title']",
+              "기한": "@convertFromUtc(item()?['DueDate'], 'Korea Standard Time', 'yyyy-MM-dd')",
+              "상태": "@item()?['Status']?['Value']",
+              "우선순위": "@coalesce(item()?['Priority']?['Value'], '보통')",
+              "링크": "@coalesce(item()?['SourceLink'], '')"
+            }
+          },
+          "runAfter": {
+            "Rows_overdue": [
+              "Succeeded"
+            ]
+          }
+        },
+        "Rows_undated": {
+          "type": "Select",
+          "note": "표 열(등록일 = 경과 판단 근거)",
+          "inputs": {
+            "from": "@body('Undated')",
+            "select": {
+              "할 일": "@item()?['Title']",
+              "등록일": "@convertFromUtc(item()?['Created'], 'Korea Standard Time', 'yyyy-MM-dd')",
+              "상태": "@item()?['Status']?['Value']",
+              "우선순위": "@coalesce(item()?['Priority']?['Value'], '보통')",
+              "링크": "@coalesce(item()?['SourceLink'], '')"
+            }
+          },
+          "runAfter": {
+            "Rows_soon": [
+              "Succeeded"
+            ]
+          }
+        },
+        "Table_overdue": {
+          "type": "Table",
+          "note": "HTML 표 만들기",
+          "inputs": {
+            "from": "@body('Rows_overdue')",
+            "format": "HTML"
+          },
+          "runAfter": {
+            "Rows_undated": [
+              "Succeeded"
+            ]
+          }
+        },
+        "Table_soon": {
+          "type": "Table",
+          "note": "HTML 표 만들기",
+          "inputs": {
+            "from": "@body('Rows_soon')",
+            "format": "HTML"
+          },
+          "runAfter": {
+            "Table_overdue": [
+              "Succeeded"
+            ]
+          }
+        },
+        "Table_undated": {
+          "type": "Table",
+          "note": "HTML 표 만들기",
+          "inputs": {
+            "from": "@body('Rows_undated')",
+            "format": "HTML"
+          },
+          "runAfter": {
+            "Table_soon": [
+              "Succeeded"
+            ]
+          }
+        },
+        "Send_brief": {
+          "type": "Connector",
+          "connector": "Office 365 Outlook",
+          "operation": "Send an email (V2)",
+          "note": "본인에게만(받는 사람 = 설정 me)",
+          "inputs": {
+            "to": "@{outputs('Config')?['me']}",
+            "subject": "@{concat('[오늘 할 일] ', outputs('Today'), ' · 초과 ', string(length(body('Overdue'))), ' · 임박 ', string(length(body('Due_soon'))), ' · 기한없음 ', string(length(body('Undated'))), if(greater(length(body('Neglected')), 0), concat(' · 방치경고 ', string(length(body('Neglected')))), ''))}",
+            "body": "@{concat('<h3>기한 지남 ', string(length(body('Overdue'))), '건</h3>', if(equals(length(body('Overdue')), 0), '<p>없음</p>', body('Table_overdue')), '<h3>오늘~2일 뒤 마감 ', string(length(body('Due_soon'))), '건</h3>', if(equals(length(body('Due_soon')), 0), '<p>없음</p>', body('Table_soon')), '<h3>기한 없는 할 일 ', string(length(body('Undated'))), '건 (오래된 순 아님 — 등록일 확인)</h3>', if(greater(length(body('Neglected')), 0), concat('<p><b>방치 경고 ', string(length(body('Neglected'))), '건</b>: 기한 없이 오래됐거나 우선순위 높음 — 기한을 정하거나 취소하세요.</p>'), ''), if(equals(length(body('Undated')), 0), '<p>없음</p>', body('Table_undated')), '<p><a href=', outputs('Config')?['links']?['myActions'], '>내 할 일 열기</a></p>')}"
+          },
+          "runAfter": {
+            "Table_undated": [
+              "Succeeded"
+            ]
+          }
+        }
+      }
+    },
+    "Catch": {
+      "type": "Scope",
+      "runAfter": {
+        "Try": [
+          "Failed",
+          "TimedOut"
+        ]
+      },
+      "actions": {
+        "Failed_actions": {
+          "type": "FilterArray",
+          "note": "Try 안에서 실패·시간 초과된 액션만 추림",
+          "inputs": {
+            "from": "@result('Try')",
+            "where": "@or(equals(item()?['status'], 'Failed'), equals(item()?['status'], 'TimedOut'))"
+          },
+          "runAfter": {}
+        },
+        "Error_text": {
+          "type": "Compose",
+          "note": "오류 요약(민감 내용 없이 300자 이내). 조건·반복 안쪽 실패는 엔진이 상세를 올려 주지 않으므로 위치를 안내",
+          "inputs": "@{if(greater(length(if(empty(body('Failed_actions')), '실패 액션을 식별하지 못했습니다(실행 기록 링크 확인)', if(equals(first(body('Failed_actions'))?['error']?['code'], 'ActionFailed'), concat('[', first(body('Failed_actions'))?['name'], '] 안쪽 단계가 실패했습니다 — 실행 기록 링크에서 빨간 단계의 오류를 확인하세요'), concat(coalesce(first(body('Failed_actions'))?['error']?['code'], ''), ' ', coalesce(first(body('Failed_actions'))?['error']?['message'], '상세 메시지 없음'))))), 300), substring(if(empty(body('Failed_actions')), '실패 액션을 식별하지 못했습니다(실행 기록 링크 확인)', if(equals(first(body('Failed_actions'))?['error']?['code'], 'ActionFailed'), concat('[', first(body('Failed_actions'))?['name'], '] 안쪽 단계가 실패했습니다 — 실행 기록 링크에서 빨간 단계의 오류를 확인하세요'), concat(coalesce(first(body('Failed_actions'))?['error']?['code'], ''), ' ', coalesce(first(body('Failed_actions'))?['error']?['message'], '상세 메시지 없음')))), 0, 300), if(empty(body('Failed_actions')), '실패 액션을 식별하지 못했습니다(실행 기록 링크 확인)', if(equals(first(body('Failed_actions'))?['error']?['code'], 'ActionFailed'), concat('[', first(body('Failed_actions'))?['name'], '] 안쪽 단계가 실패했습니다 — 실행 기록 링크에서 빨간 단계의 오류를 확인하세요'), concat(coalesce(first(body('Failed_actions'))?['error']?['code'], ''), ' ', coalesce(first(body('Failed_actions'))?['error']?['message'], '상세 메시지 없음')))))}",
+          "runAfter": {
+            "Failed_actions": [
+              "Succeeded"
+            ]
+          }
+        },
+        "Log_error": {
+          "type": "Connector",
+          "connector": "SharePoint",
+          "operation": "Create item",
+          "inputs": {
+            "site": "@{outputs('Config')?['site']}",
+            "list": "FlowErrorLog",
+            "item": {
+              "Title": "@{workflow()?['tags']?['flowDisplayName']}",
+              "FlowRunId": "@{workflow()?['run']?['name']}",
+              "FailedAction": "@{coalesce(first(body('Failed_actions'))?['name'], '(식별 불가)')}",
+              "ErrorMessage": "@{outputs('Error_text')}",
+              "Severity/Value": "Critical",
+              "Resolved": false,
+              "RunUrl": "@{concat('https://make.powerautomate.com/environments/', workflow()?['tags']?['environmentName'], '/flows/', workflow()?['name'], '/runs/', workflow()?['run']?['name'])}"
+            }
+          },
+          "note": "공통 오류 로그 기록",
+          "runAfter": {
+            "Error_text": [
+              "Succeeded"
+            ]
+          }
+        },
+        "Log_failed_email": {
+          "type": "Connector",
+          "connector": "Office 365 Outlook",
+          "operation": "Send an email (V2)",
+          "runAfter": {
+            "Log_error": [
+              "Failed",
+              "TimedOut"
+            ]
+          },
+          "note": "오류 로그 기록 실패 시 본인 메일로 직접 알림(내용 없이 흐름 이름·실행 링크만)",
+          "inputs": {
+            "to": "@{outputs('Config')?['me']}",
+            "subject": "@{concat('[P3 오류] ', workflow()?['tags']?['flowDisplayName'], ' — 오류 로그 기록도 실패')}",
+            "body": "@{concat('실패 액션: ', coalesce(first(body('Failed_actions'))?['name'], '(식별 불가)'), '<br>FlowErrorLog 목록 권한·연결을 확인하세요.<br>실행 기록: https://make.powerautomate.com/environments/', workflow()?['tags']?['environmentName'], '/flows/', workflow()?['name'], '/runs/', workflow()?['run']?['name'])}"
+          }
+        },
+        "Terminate_failed": {
+          "type": "Terminate",
+          "inputs": {
+            "runStatus": "Failed",
+            "runError": {
+              "code": "FlowFailed",
+              "message": "@{concat('실패 액션: ', coalesce(first(body('Failed_actions'))?['name'], '(식별 불가)'))}"
+            }
+          },
+          "runAfter": {
+            "Log_failed_email": [
+              "Succeeded",
+              "Failed",
+              "Skipped",
+              "TimedOut"
+            ]
+          }
+        }
+      },
+      "note": "실행 후 구성: Try가 '실패함'·'시간 초과됨'일 때"
+    }
+  }
+}

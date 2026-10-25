@@ -35,8 +35,8 @@ tools/           build_backlog.py, check_consistency.py, run_all_checks.sh
 
 2026-10-25 실행 결과: Pilot 01 19건, Pilot 02 Python 5건 + Office Scripts 15건, Pilot 03 10건 테스트 통과, 정합성 검사 29/29 통과.
 
-## 실행 단계 (2026-10-26)
-선정 파일럿: **Pilot 03**. `pilots/pilot_03/prototype/README.md`부터 읽으세요. 가상 데이터로 동작하는 프로토타입(Office Scripts 3종, 흐름 정의 9개, 에뮬레이터 테스트 56건 통과)과 클릭 순서 구축 가이드가 있습니다.
+## 실행 단계 (기록 2026-10-25)
+선정 파일럿: **Pilot 03**. `pilots/pilot_03/prototype/START_HERE_V2.md`부터 읽으세요. 가상 데이터로 동작하는 프로토타입(Office Scripts 6종, 흐름 정의 15개 = A안 최소 구성 2 + B안 13, 로컬 테스트 124건 통과)과 클릭 순서 구축 가이드가 있습니다. 2026-10-25 설계 감사로 P0 결함 6건을 수정했습니다(`pilots/pilot_03/prototype/AUDIT_REPORT.md`). 회사 테넌트 확인 9건은 아직 NOT TESTED입니다.
 
 ## 주의
 - 회사 M365 테넌트에 배포되지 않았다. 배포는 각 `implementation_guide.md`를 따른다.

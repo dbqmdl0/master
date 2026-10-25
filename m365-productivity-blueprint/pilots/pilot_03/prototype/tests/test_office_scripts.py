@@ -31,12 +31,19 @@ def kst_to_utc_naive(s):
 class CrossCheckBrief(unittest.TestCase):
     def test_same_result_as_python_reference(self):
         data = json.loads((REF / "sample_data/brief_input.json").read_text(encoding="utf-8"))
+        # 기한 없는 할 일(오래됨·우선순위 높음)과 우선순위 가감을 교차 검증에 포함(P0-3)
+        data["actions"] += [
+            {"id": "ACT-2026-00090", "title": "포장재 대체 공급사 검토", "status": "진행중", "priority": "높음", "created": "2026-10-10"},
+            {"id": "ACT-2026-00091", "title": "재고 기준표 정리", "status": "미착수", "created": "2026-10-24"},
+            {"id": "ACT-2026-00092", "title": "낮은 우선 정리", "status": "미착수", "priority": "낮음", "due": data["today"]}]
         py = PB.build_brief(data)
         events = [{"subject": e["subject"], "start": kst_to_utc_naive(e["start"]), "end": kst_to_utc_naive(e["end"]),
                    "isAllDay": e.get("isAllDay", False), "organizer": ME if e.get("isOrganizer") else "x@example.com",
                    "hasAgendaLink": e.get("hasAgendaLink", False)} for e in data["events"]]
-        actions = [{"ActionID": a["id"], "Title": a["title"], "DueDate": a["due"], "Status": {"Value": a["status"]},
-                    "ActionType": {"Value": a.get("actionType", "실행")}, "Owner": {"Email": ME}} for a in data["actions"]]
+        actions = [{"ActionID": a["id"], "Title": a["title"], "DueDate": a.get("due"), "Status": {"Value": a["status"]},
+                    "ActionType": {"Value": a.get("actionType", "실행")}, "Owner": {"Email": ME},
+                    "Priority": {"Value": a["priority"]} if a.get("priority") else None,
+                    "Created": f"{a['created']}T00:00:00Z" if a.get("created") else None} for a in data["actions"]]
         decisions = [{"DecisionID": d["id"], "Title": d["title"], "Status": {"Value": d["status"]},
                       "RequestedAt": d["requestedAt"], "Decider": {"Email": ME}} for d in data["decisions"]]
         requests = [{"RequestID": r["id"], "Title": r["title"], "slaState": r["slaState"]} for r in data["requests"]]
@@ -49,7 +56,11 @@ class CrossCheckBrief(unittest.TestCase):
                          [(i["kind"], i["id"], i["text"], i["score"]) for i in py["top"]])
         c = py["counts"]
         self.assertEqual(ts["counts"], {"overdue": c["기한초과"], "dueToday": c["오늘마감"], "decisionWaiting": c["결정대기"],
-                                        "slaOverdue": c["SLA초과"], "slaDueSoon": c["SLA임박"], "replyWaiting": c["회신대기"]})
+                                        "slaOverdue": c["SLA초과"], "slaDueSoon": c["SLA임박"], "replyWaiting": c["회신대기"],
+                                        "undated": c["기한미정"], "neglectedUndated": len(py["neglected"]), "proposalsToConfirm": 0})
+        self.assertEqual([i["id"] for i in ts["undatedTop"]], [i["id"] for i in py["undatedTop"]])
+        self.assertEqual([i["id"] for i in ts["neglected"]], [i["id"] for i in py["neglected"]])
+        self.assertEqual(c["기한미정"], 2)
         self.assertEqual((ts["meetingCount"], ts["meetingHours"]), (py["meetingCount"], py["meetingHours"]))
         self.assertEqual(ts["focusBlocks"], [f"{a}~{b}" for a, b in py["focusBlocks"]])
         self.assertEqual(ts["organizerWithoutAgenda"], py["organizerWithoutAgenda"])
@@ -83,8 +94,30 @@ class BriefEdgeCases(unittest.TestCase):
         acts = [{"ActionID": "A1", "Title": "기한없음", "Status": {"Value": "진행중"}},
                 {"ActionID": "A2", "Title": "남의일", "DueDate": "2026-10-20", "Status": {"Value": "미착수"}, "Owner": {"Email": "x@example.com"}}]
         r = self.brief("2026-10-26", acts)["result"]
-        self.assertEqual((r["top"], r["undatedOpenActions"]), ([], 1))
-        self.assertIn("기한 미정 액션 1건", r["cardJson"])
+        # 기한 없는 할 일도 TOP5 후보(점수 30)이며 기한을 만들어 넣지 않는다. 남의 일은 제외
+        self.assertEqual([(i["kind"], i["id"], i["score"]) for i in r["top"]], [("기한미정", "A1", 30)])
+        self.assertEqual(r["undatedOpenActions"], 1)
+        self.assertIn("기한 없는 할 일 1건", r["cardJson"])
+        self.assertNotIn("2026-10", r["top"][0]["text"])
+
+    def test_undated_priority_age_and_neglect_warning(self):
+        acts = [
+            {"ActionID": "U-OLD", "Title": "오래된 기한없음", "Status": {"Value": "미착수"}, "Created": "2026-10-01T01:00:00Z"},
+            {"ActionID": "U-HIGH", "Title": "중요 기한없음", "Status": {"Value": "진행중"}, "Priority": {"Value": "높음"},
+             "Created": "2026-10-16T01:00:00Z"},
+            {"ActionID": "U-NEW", "Title": "새 기한없음", "Status": {"Value": "미착수"}, "Created": "2026-10-25T23:00:00Z"},
+            {"ActionID": "D-TODAY", "Title": "오늘 마감", "DueDate": "2026-10-26", "Status": {"Value": "미착수"}},
+            {"ActionID": "D-FUT", "Title": "다음 주 마감", "DueDate": "2026-11-02", "Status": {"Value": "미착수"}},
+            {"ActionID": "D-DONE", "Title": "완료됨", "DueDate": "2026-10-20", "Status": {"Value": "완료"}}]
+        r = self.brief("2026-10-26", acts, decisionsJson=json.dumps([{"Title": "제안1", "Status": {"Value": "제안"}}]))["result"]
+        # 오래된(25일 → 30+40 상한=70), 중요(10일 → 30+20+15=65), 오늘마감 80, 새 것(0일 → 30)
+        self.assertEqual([(i["id"], i["score"]) for i in r["top"]], [("D-TODAY", 80), ("U-OLD", 70), ("U-HIGH", 65), ("U-NEW", 30)])
+        self.assertEqual(sorted(i["id"] for i in r["neglected"]), ["U-HIGH", "U-OLD"])  # 14일↑, 또는 높음+7일↑
+        self.assertEqual(r["counts"]["proposalsToConfirm"], 1)
+        self.assertIn("방치 경고 2건", r["cardJson"])
+        self.assertIn("확정 대기 제안 1건", r["htmlSummary"])
+        self.assertNotIn("D-FUT", [i["id"] for i in r["top"]])     # 미래 기한은 오늘 할 일 아님
+        self.assertNotIn("D-DONE", [i["id"] for i in r["top"]])    # 완료 제외
 
     def test_large_input_card_stays_under_limit(self):
         acts = [{"ActionID": f"A{i}", "Title": "긴 제목 " * 40, "DueDate": "2026-10-20", "Status": {"Value": "미착수"}} for i in range(500)]

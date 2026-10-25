@@ -161,6 +161,34 @@
           "note": "같은 메일·메시지로 액션이 두 번 생기지 않게 하는 중복 방지 키"
         },
         {
+          "internalName": "SourceKey",
+          "displayName": "원본 고유키(시스템)",
+          "type": "Text",
+          "required": false,
+          "indexed": true,
+          "setBy": "flow",
+          "hidden": true,
+          "note": "메일 이동·재플래그에도 변하지 않는 중복 방지 키. internetMessageId가 있으면 'imid|값', 없으면 'fp|발신자|수신시각|제목'(지문). 같은 메일=같은 키, 다른 메일은 합치지 않는다."
+        },
+        {
+          "internalName": "FlagDue",
+          "displayName": "자동 기한(시스템)",
+          "type": "DateTime",
+          "required": false,
+          "dateOnly": true,
+          "setBy": "flow",
+          "hidden": true,
+          "note": "자동화(플래그 기한·기본 기한·F13 추정)가 마지막으로 넣은 기한. 목록 기한이 이 값과 다르면 사람이 바꾼 것으로 보고 자동화가 덮어쓰지 않는다"
+        },
+        {
+          "internalName": "SyncNote",
+          "displayName": "동기화 메모",
+          "type": "Note",
+          "required": false,
+          "setBy": "flow",
+          "note": "자동화가 바꾸지 않고 사람 확인이 필요한 변화(완료 후 재플래그, 플래그 완료, 범주 변경, 기한 충돌, 중복 정리)를 날짜와 함께 남김"
+        },
+        {
           "internalName": "PrevStatus",
           "displayName": "이전 상태(시스템)",
           "type": "Text",
@@ -239,6 +267,21 @@
           "required": false
         },
         {
+          "internalName": "FollowUps",
+          "displayName": "후속 조치",
+          "type": "Note",
+          "required": false,
+          "note": "확정 후 해야 할 일(액션번호 또는 내용). 확정 시 비어 있으면 확인 필요로 표시"
+        },
+        {
+          "internalName": "ConfirmationGap",
+          "displayName": "확정 확인 필요",
+          "type": "Text",
+          "required": false,
+          "setBy": "flow",
+          "note": "상태가 '확정'인데 결정권자·근거·후속 조치가 비어 있으면 무엇이 비었는지 표시(P3P-F4). 비어 있으면 확인 완료"
+        },
+        {
           "internalName": "Status",
           "displayName": "상태",
           "type": "Choice",
@@ -249,16 +292,19 @@
             "결정요청",
             "확정",
             "보류",
-            "번복"
+            "번복",
+            "취소"
           ],
-          "default": "확정"
+          "default": "제안",
+          "note": "제안=자동화·AI·메일 범주로 들어온 미확정 내용, 결정요청=결정권자 판단 대기, 확정=사람이 목록에서 직접 바꾼 경우만. 자동화는 '확정'을 만들지 않는다."
         },
         {
           "internalName": "Decider",
           "displayName": "결정권자",
           "type": "User",
           "required": false,
-          "indexed": true
+          "indexed": true,
+          "note": "확정 시 사람이 입력. AI가 추정한 이름은 여기 넣지 않고 결정 내용에 '(AI 추정, 미확인)'으로만 남긴다"
         },
         {
           "internalName": "RequestedBy",
@@ -360,9 +406,30 @@
           "indexed": true,
           "setBy": "flow",
           "hidden": true
+        },
+        {
+          "internalName": "SourceKey",
+          "displayName": "원본 고유키(시스템)",
+          "type": "Text",
+          "required": false,
+          "indexed": true,
+          "setBy": "flow",
+          "hidden": true
+        },
+        {
+          "internalName": "SyncNote",
+          "displayName": "동기화 메모",
+          "type": "Note",
+          "required": false,
+          "setBy": "flow"
         }
       ],
       "views": [
+        {
+          "name": "확정 대기 제안",
+          "filter": "Status = 제안",
+          "sort": "Created asc"
+        },
         {
           "name": "결정 대기열",
           "filter": "Status = 결정요청",
@@ -381,6 +448,10 @@
         {
           "name": "재검토 도래",
           "filter": "ReviewDate <= [Today]+7 AND Status = 확정"
+        },
+        {
+          "name": "확정 확인 필요",
+          "filter": "Status = 확정 AND ConfirmationGap is not empty"
         }
       ],
       "permissions": "SCM 팀 편집 / 협업 부서 읽기(결정 공유가 목적). 민감 결정은 별도 목록 또는 항목 권한."

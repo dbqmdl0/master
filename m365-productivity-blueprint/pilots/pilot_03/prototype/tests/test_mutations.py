@@ -37,14 +37,25 @@ class Mutations(unittest.TestCase):
     def test_removing_duplicate_check_creates_duplicates(self):
         def drop(d):
             t = d["actions"]["Try"]["actions"]
-            t.pop("Find_existing")
-            t.pop("If_duplicate")
-            t["Title_text"]["runAfter"] = {"Check_message_id": ["Succeeded"]}
+            t["If_has_action"]["expression"] = "@equals(1, 2)"  # 사전 확인 무력화
+            t["If_has_action"]["else"]["actions"]["If_dup_Create_action"]["expression"] = "@equals(1, 2)"  # 사후 점검 무력화
         paths, _ = mutated("P3P-F2", drop)
         e = Env(flow_paths=paths)
         e.flag_email("AAMk-y", folder="Sent Items")
         e.flag_email("AAMk-y", folder="Sent Items")
-        self.assertEqual(len(e.items("ActionItems")), 2)
+        self.assertEqual([i["Status"]["Value"] for i in e.items("ActionItems")], ["미착수", "미착수"])
+
+    def test_post_check_alone_still_contains_duplicates(self):
+        # 사전 확인만 없애도 사후 점검이 두 번째 항목을 '취소'로 정리(삭제 아님) → 이중 방어 입증
+        def drop(d):
+            d["actions"]["Try"]["actions"]["If_has_action"]["expression"] = "@equals(1, 2)"
+        paths, _ = mutated("P3P-F2", drop)
+        e = Env(flow_paths=paths)
+        e.flag_email("AAMk-z", folder="Sent Items")
+        e.flag_email("AAMk-z", folder="Sent Items")
+        st = [i["Status"]["Value"] for i in e.items("ActionItems")]
+        self.assertEqual(st, ["미착수", "취소"])
+        self.assertIn("중복 생성되어 자동 취소", e.items("ActionItems")[1]["SyncNote"])
 
     def test_removing_recheck_allows_double_registration(self):
         def drop(d):
@@ -68,7 +79,7 @@ class Mutations(unittest.TestCase):
     def test_lint_catches_broken_expression_missing_required_and_bad_choice(self):
         d = json.loads((FLOWS / "P3P-F2.flow.json").read_text(encoding="utf-8"))
         bad = copy.deepcopy(d)
-        item = bad["actions"]["Try"]["actions"]["Create_action"]["inputs"]["item"]
+        item = bad["actions"]["Try"]["actions"]["If_has_action"]["else"]["actions"]["Create_action"]["inputs"]["item"]
         item["Title"] = "@{concat('a', outputs('Title_text')}"          # 괄호 누락
         item.pop("ActionType/Value")                                     # 필수 열 누락
         item["Status/Value"] = "대기"                                     # 없는 선택지

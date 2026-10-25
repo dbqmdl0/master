@@ -166,6 +166,10 @@ class FakeSharePoint:
         self.seq = 0
         self.events: list[dict] = []
         self.calls: list[tuple] = []
+        # 엄격 모드(기본): 흐름의 Update item 에서 입력하지 않은 열은 지워진다고 가정한다(최악의 경우).
+        # 공식 문서는 '지정하지 않은 열은 유지'라고 하지만 커뮤니티에는 빈 입력이 값을 지운 사례가 있어,
+        # 흐름이 어느 쪽에서도 안전한지(모든 열을 최신 값으로 다시 넣는지) 검증하려고 이렇게 둔다.
+        self.strict_update = True
 
     def add_list(self, site: str, name: str, columns: list[dict], acl: dict[str, str]):
         self.lists[(site.lower(), name)] = {"columns": {c["internalName"]: c for c in columns}, "items": {},
@@ -272,6 +276,11 @@ class FakeSharePoint:
             if need:
                 raise ConnectorError(400, "RequiredInputMissing", f"Update item 필수 입력 누락: {', '.join(need)}")
         trial = dict(rec)
+        if not ui and self.strict_update:
+            given = {k.split("/")[0] for k in fields}
+            for n in lst["columns"]:
+                if n not in given:
+                    trial[n] = None
         self._apply(lst, trial, fields, creating=False)
         trial["Modified"], trial["Editor"] = iso(self.clock()), user.lower()
         self.seq += 1
@@ -280,7 +289,7 @@ class FakeSharePoint:
         self._emit(lst, trial, "modified")
         return self._shape(lst, trial)
 
-    def get_items(self, user, site, name, filter_query=None, top=None, read_seq=None):
+    def get_items(self, user, site, name, filter_query=None, top=None, read_seq=None, order_by=None):
         lst = self._list(site, name)
         self._require(lst, user, "read")
         node = _ODataParser(filter_query).parse() if filter_query else None
@@ -291,6 +300,15 @@ class FakeSharePoint:
             shaped = self._shape(lst, rec)
             if node is None or _match(node, shaped):
                 rows.append(shaped)
+        if order_by:
+            field, _, direction = order_by.strip().partition(" ")
+            def key(r):
+                v = r.get(field)
+                v = v.get("Value") if isinstance(v, dict) else v
+                return (v is None, v if v is not None else "")  # 빈 값은 뒤로
+            rows.sort(key=key, reverse=direction.strip().lower() == "desc")
+            if direction.strip().lower() == "desc":
+                rows = [r for r in rows if r.get(field) is not None] + [r for r in rows if r.get(field) is None]
         return rows[: int(top)] if top else rows
 
     def items(self, site, name):
@@ -374,8 +392,17 @@ class FakeExcel:
     def add_file(self, path, users):
         self.files[path] = {u.lower() for u in users}
 
-    def run_script(self, user, workbook, script, params):
-        self.faults.check("Excel Online (Business)", "Run script from SharePoint library", None)
+    ONEDRIVE_SCRIPTS = "/Documents/Office Scripts"
+
+    def run_script(self, user, workbook, script, params, operation="Run script from SharePoint library"):
+        """operation='Run script'(OneDrive): workbook=OneDrive 파일 경로, script=스크립트 이름 → 본인 OneDrive
+        '문서/Office Scripts/<이름>.osts' 에서만 찾는다(공식 문서: Run script는 기본 위치의 스크립트만 사용).
+        operation='Run script from SharePoint library': script=라이브러리 안 .osts 경로."""
+        self.faults.check("Excel Online (Business)", operation, None)
+        if operation == "Run script":
+            if "/" in script or script.endswith(".osts"):
+                raise ConnectorError(400, "InvalidScript", f"'Run script'는 스크립트 이름만 받습니다: {script}")
+            script = f"{self.ONEDRIVE_SCRIPTS}/{script}.osts"
         for p in (workbook, script):
             if p not in self.files:
                 raise ConnectorError(404, "FileNotFound", f"파일 없음: {p}")

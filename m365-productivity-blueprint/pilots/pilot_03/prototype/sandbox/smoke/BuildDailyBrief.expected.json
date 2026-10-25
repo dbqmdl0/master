@@ -17,9 +17,14 @@
     "decisionWaiting": 0,
     "slaOverdue": 0,
     "slaDueSoon": 0,
-    "replyWaiting": 0
+    "replyWaiting": 0,
+    "undated": 0,
+    "neglectedUndated": 0,
+    "proposalsToConfirm": 0
   },
   "undatedOpenActions": 0,
+  "undatedTop": [],
+  "neglected": [],
   "meetingCount": 1,
   "meetingHours": 1,
   "focusBlocks": [

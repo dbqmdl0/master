@@ -27,7 +27,10 @@ SCORE = {
     "decision_waiting": 70, "decision_waiting_per_day": 3,
     "request_due_soon": 60,
     "reply_waiting": 40, "reply_waiting_per_day": 2,
+    "undated": 30, "undated_per_day": 2, "undated_age_cap": 40,
 }
+PRIORITY_BONUS = {"높음": 15, "낮음": -10}
+NEGLECT_DAYS, NEGLECT_DAYS_HIGH, UNDATED_SHOW = 14, 7, 3
 OPEN_ACTION = {"미착수", "진행중"}
 
 
@@ -40,23 +43,35 @@ def _dt(s: str) -> datetime:
 
 
 def score_items(data: dict, today: date) -> list[dict]:
+    """TOP5 규칙은 BuildDailyBrief.ts 머리 주석과 같다. 기한 없는 할 일도 점수를 받고(기한을 만들지 않음),
+    사용자 우선순위('높음' +15, '낮음' −10)를 모든 할 일에 더한다."""
     items: list[dict] = []
     for a in data.get("actions", []):
-        if a["status"] not in OPEN_ACTION or not a.get("due"):
+        if a["status"] not in OPEN_ACTION:
+            continue
+        prio = a.get("priority", "")
+        bonus = PRIORITY_BONUS.get(prio, 0)
+        mark = " [높음]" if prio == "높음" else ""
+        if not a.get("due"):
+            age = max(0, (today - _d(a["created"])).days) if a.get("created") else 0
+            items.append({"score": SCORE["undated"] + min(SCORE["undated_age_cap"], SCORE["undated_per_day"] * age) + bonus,
+                          "kind": "기한미정", "id": a["id"], "text": f"{a['title']} (기한 없음 · 등록 {age}일째){mark}",
+                          "url": a.get("url", ""),
+                          "neglected": age >= NEGLECT_DAYS or (prio == "높음" and age >= NEGLECT_DAYS_HIGH)})
             continue
         due = _d(a["due"])
         kind = "회신대기" if a.get("actionType") == "회신대기" else "액션"
         if kind == "회신대기" and due <= today:
             days = (today - due).days
-            items.append({"score": SCORE["reply_waiting"] + SCORE["reply_waiting_per_day"] * days,
-                          "kind": kind, "id": a["id"], "text": f"{a['title']} (회신 대기 {days}일)", "url": a.get("url", "")})
+            items.append({"score": SCORE["reply_waiting"] + SCORE["reply_waiting_per_day"] * days + bonus,
+                          "kind": kind, "id": a["id"], "text": f"{a['title']} (회신 대기 {days}일){mark}", "url": a.get("url", "")})
         elif due < today:
             days = (today - due).days
-            items.append({"score": SCORE["action_overdue"] + SCORE["action_overdue_per_day"] * days,
-                          "kind": "기한초과", "id": a["id"], "text": f"{a['title']} ({days}일 초과)", "url": a.get("url", "")})
+            items.append({"score": SCORE["action_overdue"] + SCORE["action_overdue_per_day"] * days + bonus,
+                          "kind": "기한초과", "id": a["id"], "text": f"{a['title']} ({days}일 초과){mark}", "url": a.get("url", "")})
         elif due == today:
-            items.append({"score": SCORE["action_due_today"], "kind": "오늘마감", "id": a["id"],
-                          "text": a["title"], "url": a.get("url", "")})
+            items.append({"score": SCORE["action_due_today"] + bonus, "kind": "오늘마감", "id": a["id"],
+                          "text": f"{a['title']}{mark}", "url": a.get("url", "")})
     for d in data.get("decisions", []):
         if d["status"] != "결정요청":
             continue
@@ -105,11 +120,14 @@ def build_brief(data: dict) -> dict:
     items = score_items(data, today)
     events = [e for e in data.get("events", []) if _dt(e["start"]).date() == today and not e.get("isAllDay")]
     no_preread = [e["subject"] for e in events if e.get("isOrganizer") and not e.get("hasAgendaLink")]
+    undated = [i for i in items if i["kind"] == "기한미정"]
     return {
         "today": today.isoformat(),
         "top": items[:TOP_N],
+        "undatedTop": undated[:UNDATED_SHOW],
+        "neglected": [i for i in undated if i["neglected"]],
         "counts": {k: sum(1 for i in items if i["kind"] == k)
-                   for k in ("기한초과", "오늘마감", "결정대기", "SLA초과", "SLA임박", "회신대기")},
+                   for k in ("기한초과", "오늘마감", "결정대기", "SLA초과", "SLA임박", "회신대기", "기한미정")},
         "meetingCount": len(events),
         "meetingHours": meeting_hours(events, today),
         "focusBlocks": focus_blocks(events, today),
@@ -131,6 +149,12 @@ def to_card(brief: dict) -> dict:
         body.append({"type": "FactSet", "facts": [{"title": i["kind"], "value": i["text"]} for i in brief["top"]]})
     else:
         body.append({"type": "TextBlock", "text": "급한 미결 항목이 없습니다. 전략 과제에 시간을 쓰세요.", "wrap": True})
+    if brief["undatedTop"]:
+        body.append({"type": "TextBlock", "text": f"기한 없는 할 일 {brief['counts']['기한미정']}건 (기한은 직접 정하세요)", "weight": "Bolder"})
+        body.append({"type": "FactSet", "facts": [{"title": "기한미정", "value": i["text"]} for i in brief["undatedTop"]]})
+    if brief["neglected"]:
+        body.append({"type": "TextBlock", "color": "Warning", "wrap": True,
+                     "text": f"방치 경고 {len(brief['neglected'])}건 — 기한을 정하거나 취소하세요."})
     blocks = ", ".join(f"{a}~{b}" for a, b in brief["focusBlocks"]) or "없음(일정 재조정 검토)"
     body.append({"type": "TextBlock", "text": f"집중 가능 시간: {blocks}", "wrap": True, "spacing": "Medium"})
     if brief["events"]:

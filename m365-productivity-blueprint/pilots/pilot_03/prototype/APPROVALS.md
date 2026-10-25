@@ -29,7 +29,7 @@
 | ID | 지원 요청 | 필요한 경우 | 사용자가 혼자 할 수 없는 이유 | 거절 시 대체안 |
 |---|---|---|---|---|
 | I-01 | DLP 정책에서 SharePoint·Outlook·Teams·Excel Online (Business)·Office 365 Users 커넥터 동일 흐름 사용 허용 확인 | C2 점검에서 경고가 날 때 | DLP 정책은 관리자 소관 | 브리핑을 메일 전용으로, 메시지 기록은 Lists 양식 입력으로 |
-| I-02 | Teams 관리 센터 **Workflows 앱** 허용 — **2026-10-26 점검: 앱 없음** | (선택) 알림을 Teams로 받고 싶을 때, Teams 메시지 바로 기록(P3P-F5)을 쓰고 싶을 때 | 앱 정책은 관리자 소관 | **현재 적용 중:** 메일 알림 모드(`channel=email`) + Outlook 범주로 결정 기록 — 기능 손실은 'Teams에서 바로 기록'뿐 |
+| I-02 | **(a) Teams 관리 센터 Workflows 앱** 허용 — **2026-10-25 점검: 앱 없음** / **(b) Teams 커넥터 DLP 허용**은 별개 항목: (a)는 Teams 앱 정책(Flow bot·사용자 게시, '선택한 메시지' 트리거에 필요 — 공식 문서), (b)는 Power Platform 데이터 정책(막히면 Teams 액션이 든 흐름 저장 자체가 거부). 확인: (a) Teams › 앱 검색, (b) Teams 액션 1개짜리 시험 흐름 저장 시 정책 오류 여부 — 메일 모드에서는 Teams 액션을 넣지 않으므로 (b)는 지금 필요 없음 | (선택) 알림을 Teams로 받고 싶을 때, Teams 메시지 바로 기록(P3P-F5)을 쓰고 싶을 때 | 앱 정책은 관리자 소관 | **현재 적용 중:** 메일 알림 모드(`channel=email`) + Outlook 범주로 결정 기록 — 기능 손실은 'Teams에서 바로 기록'뿐 |
 | I-03 | Office Scripts 사용 허용 | C4 실패 시 | 관리자 설정 | 브리핑 계산을 흐름 식으로 대체(복잡도↑) 또는 Copilot 예약 프롬프트만 사용 |
 | I-04 | **사내 데이터의 Copilot 사용 범위·회의 전사(Transcription) 정책** 확인 | 실제 회의록 처리 전(U-03) | 정보보호 정책 | Teams 메시지 기록(P3P-F5)만 사용, AI 단계 끔 |
 | I-05 | Agent Builder로 SharePoint 지식 에이전트 생성 허용, **Restricted SharePoint Search** 여부 확인 | 결정 조회 에이전트 | 테넌트 설정 | 목록 보기·검색으로 대체 |
