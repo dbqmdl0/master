@@ -1,0 +1,9 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/sp/v2/column-formatting.schema.json",
+  "elmType": "div",
+  "style": {"padding": "2px 6px", "border-radius": "4px", "display": "inline-block"},
+  "attributes": {
+    "class": "=if([$SLATargetDate] == '', '', if([$Status] == '완료' || [$Status] == '반려' || [$Status] == '취소', 'ms-fontColor-neutralSecondary', if(Number([$SLATargetDate]) + 86400000 < Number(@now), 'sp-field-severity--severeWarning', if(Number([$SLATargetDate]) < Number(@now) + 86400000, 'sp-field-severity--warning', 'sp-field-severity--good'))))"
+  },
+  "txtContent": "=if([$SLATargetDate] == '', '-', toLocaleDateString([$SLATargetDate]) + if([$Status] == '완료' || [$Status] == '반려' || [$Status] == '취소', '', if(Number([$SLATargetDate]) + 86400000 < Number(@now), ' ⛔ 초과', if(Number([$SLATargetDate]) < Number(@now) + 86400000, ' ⚠ 임박', ''))))"
+}

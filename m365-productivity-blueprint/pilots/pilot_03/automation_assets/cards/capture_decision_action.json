@@ -1,0 +1,16 @@
+{
+  "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+  "type": "AdaptiveCard",
+  "version": "1.4",
+  "body": [
+    {"type": "TextBlock", "text": "이 메시지를 결정·액션으로 기록", "weight": "Bolder", "size": "Medium"},
+    {"type": "Input.ChoiceSet", "id": "kind", "label": "기록 유형", "isRequired": true, "value": "액션", "style": "expanded",
+     "choices": [{"title": "액션(할 일)", "value": "액션"}, {"title": "결정(확정)", "value": "결정"}, {"title": "결정 요청(대기열)", "value": "결정요청"}]},
+    {"type": "Input.Text", "id": "title", "label": "제목(한 줄)", "isRequired": true, "maxLength": 120, "errorMessage": "제목을 입력하세요"},
+    {"type": "Input.Text", "id": "ownerEmail", "label": "담당자/결정권자 이메일(비우면 나)", "style": "Email"},
+    {"type": "Input.Date", "id": "dueDate", "label": "기한(액션) 또는 결정 희망일"},
+    {"type": "Input.Text", "id": "decisionId", "label": "연결할 결정번호(선택, 예: DEC-2026-00031)"},
+    {"type": "TextBlock", "text": "원본 메시지 링크와 본문이 '근거'로 함께 저장됩니다.", "isSubtle": true, "size": "Small", "wrap": true}
+  ],
+  "actions": [{"type": "Action.Submit", "title": "기록"}]
+}

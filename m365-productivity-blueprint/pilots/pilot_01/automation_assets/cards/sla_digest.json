@@ -1,0 +1,17 @@
+{
+  "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+  "type": "AdaptiveCard",
+  "version": "1.4",
+  "body": [
+    {"type": "TextBlock", "text": "오늘의 SLA 점검 ({{TodayKst}})", "weight": "Bolder", "size": "Medium"},
+    {"type": "TextBlock", "text": "기한 초과 {{OverdueCount}}건 · 1영업일 이내 {{DueSoonCount}}건 · 에스컬레이션 {{EscalateCount}}건", "wrap": true},
+    {"type": "TextBlock", "text": "기한 초과", "weight": "Bolder", "color": "Attention", "spacing": "Medium"},
+    {"type": "FactSet", "facts": "{{OVERDUE_FACTS_ARRAY}}"},
+    {"type": "TextBlock", "text": "곧 마감", "weight": "Bolder", "color": "Warning", "spacing": "Medium"},
+    {"type": "FactSet", "facts": "{{DUESOON_FACTS_ARRAY}}"},
+    {"type": "TextBlock", "text": "에스컬레이션 대상은 팀장에게도 오늘 공유됩니다. 약속일 재협의가 필요하면 사유와 함께 '약속 완료일'을 수정하세요.", "wrap": true, "isSubtle": true, "size": "Small"}
+  ],
+  "actions": [
+    {"type": "Action.OpenUrl", "title": "SLA 위험 보기 열기", "url": "{{SlaViewUrl}}"}
+  ]
+}

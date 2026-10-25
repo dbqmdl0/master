@@ -1,0 +1,26 @@
+{
+  "$comment": "모의 데이터. 시간은 Flow에서 KST로 변환된 값이라고 가정.",
+  "today": "2026-10-26",
+  "events": [
+    {"subject": "주간 공급 조정 회의", "start": "2026-10-26T09:30:00", "end": "2026-10-26T10:30:00", "isOrganizer": true, "hasAgendaLink": true},
+    {"subject": "해외사업 수요 리뷰", "start": "2026-10-26T13:00:00", "end": "2026-10-26T14:00:00", "isOrganizer": false},
+    {"subject": "S&OP 사전 검토", "start": "2026-10-26T15:30:00", "end": "2026-10-26T16:00:00", "isOrganizer": true, "hasAgendaLink": false},
+    {"subject": "창립기념 행사", "start": "2026-10-26T00:00:00", "end": "2026-10-27T00:00:00", "isAllDay": true}
+  ],
+  "actions": [
+    {"id": "ACT-2026-00012", "title": "PLT-B 11월 CAPA 확인", "due": "2026-10-22", "status": "진행중"},
+    {"id": "ACT-2026-00015", "title": "해외-1 이월 수량 안내", "due": "2026-10-26", "status": "미착수"},
+    {"id": "ACT-2026-00016", "title": "구매팀 포장재 단가 회신", "due": "2026-10-21", "status": "진행중", "actionType": "회신대기"},
+    {"id": "ACT-2026-00020", "title": "12월 계획 초안", "due": "2026-11-05", "status": "미착수"},
+    {"id": "ACT-2026-00009", "title": "완료된 일", "due": "2026-10-20", "status": "완료"}
+  ],
+  "decisions": [
+    {"id": "DEC-2026-00031", "title": "단산 SKU-MOCK-310 잔량 처리 방식", "status": "결정요청", "requestedAt": "2026-10-20"},
+    {"id": "DEC-2026-00033", "title": "확정된 결정", "status": "확정", "requestedAt": "2026-10-19"}
+  ],
+  "requests": [
+    {"id": "REQ-2026-00102", "title": "신규 캡슐 시제품 200갑", "slaState": "due_soon"},
+    {"id": "REQ-2026-00097", "title": "포장재 변경 SKU 재고 확인", "slaState": "overdue"},
+    {"id": "REQ-2026-00110", "title": "데이터 요청", "slaState": "ok"}
+  ]
+}

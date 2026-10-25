@@ -1,0 +1,91 @@
+{
+  "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+  "type": "AdaptiveCard",
+  "version": "1.4",
+  "body": [
+    {
+      "type": "TextBlock",
+      "text": "아침 브리핑 · 2026-10-26",
+      "weight": "Bolder",
+      "size": "Medium"
+    },
+    {
+      "type": "TextBlock",
+      "wrap": true,
+      "spacing": "Small",
+      "text": "회의 3건(2.5h) · 기한초과 1 · 결정대기 1 · SLA위험 2"
+    },
+    {
+      "type": "TextBlock",
+      "text": "오늘 먼저 처리할 5가지",
+      "weight": "Bolder",
+      "spacing": "Medium"
+    },
+    {
+      "type": "FactSet",
+      "facts": [
+        {
+          "title": "기한초과",
+          "value": "PLT-B 11월 CAPA 확인 (4일 초과)"
+        },
+        {
+          "title": "SLA초과",
+          "value": "포장재 변경 SKU 재고 확인"
+        },
+        {
+          "title": "결정대기",
+          "value": "단산 SKU-MOCK-310 잔량 처리 방식 (대기 6일)"
+        },
+        {
+          "title": "오늘마감",
+          "value": "해외-1 이월 수량 안내"
+        },
+        {
+          "title": "SLA임박",
+          "value": "신규 캡슐 시제품 200갑"
+        }
+      ]
+    },
+    {
+      "type": "TextBlock",
+      "text": "집중 가능 시간: 10:30~13:00, 14:00~15:30, 16:00~18:00",
+      "wrap": true,
+      "spacing": "Medium"
+    },
+    {
+      "type": "FactSet",
+      "facts": [
+        {
+          "title": "09:30",
+          "value": "주간 공급 조정 회의"
+        },
+        {
+          "title": "13:00",
+          "value": "해외사업 수요 리뷰"
+        },
+        {
+          "title": "15:30",
+          "value": "S&OP 사전 검토"
+        }
+      ]
+    },
+    {
+      "type": "TextBlock",
+      "color": "Warning",
+      "wrap": true,
+      "text": "안건·사전자료 링크가 없는 내 주관 회의: S&OP 사전 검토"
+    }
+  ],
+  "actions": [
+    {
+      "type": "Action.OpenUrl",
+      "title": "내 액션 열기",
+      "url": "{{MyActionsViewUrl}}"
+    },
+    {
+      "type": "Action.OpenUrl",
+      "title": "결정 대기열",
+      "url": "{{DecisionQueueViewUrl}}"
+    }
+  ]
+}

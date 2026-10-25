@@ -1,0 +1,6 @@
+[
+  {"name": "한서연", "email": "seoyeon.han@example.com", "aliases": ["한 매니저"]},
+  {"name": "박도윤", "email": "doyun.park@example.com", "aliases": []},
+  {"name": "이민재", "email": "minjae.lee@example.com", "aliases": []},
+  {"name": "최하은", "email": "haeun.choi@example.com", "aliases": ["PLT-A 최하은"]}
+]

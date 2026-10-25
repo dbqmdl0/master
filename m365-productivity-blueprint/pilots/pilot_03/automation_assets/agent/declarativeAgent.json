@@ -1,0 +1,21 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/copilot/declarative-agent/v1.4/schema.json",
+  "version": "v1.4",
+  "name": "SCM 결정 조회 도우미",
+  "description": "SCM 결정 레지스터와 회의 결정 근거 문서에서 결정 내용·결정권자·근거를 출처와 함께 찾아줍니다. 읽기 전용.",
+  "instructions": "$[file('instructions.txt')]",
+  "capabilities": [
+    {
+      "name": "OneDriveAndSharePoint",
+      "items_by_url": [
+        {"url": "https://<tenant>.sharepoint.com/sites/<SCM-site>/Shared Documents/회의록/결정근거"},
+        {"url": "https://<tenant>.sharepoint.com/sites/<SCM-site>/Lists/DecisionLog"}
+      ]
+    }
+  ],
+  "conversation_starters": [
+    {"title": "최근 결정", "text": "지난 30일 동안 확정된 결정을 보여줘"},
+    {"title": "결정 대기열", "text": "결정 대기열에서 7일 넘은 건은?"},
+    {"title": "근거 찾기", "text": "SKU-MOCK-310 단산 관련 결정과 근거는?"}
+  ]
+}

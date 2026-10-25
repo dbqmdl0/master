@@ -1,0 +1,43 @@
+{
+  "$comment": "공장 주간 제출 데이터 계약(Data Contract) v1.0. Office Scripts·Python 검증기·템플릿이 모두 이 정의를 따른다(tools/check_consistency.py로 일치 검사).",
+  "contractVersion": "1.0",
+  "submissionTable": "tblSubmit",
+  "factTable": "tblFact",
+  "grain": "Week × PlantCode × SKU × LineCode 1행",
+  "columns": [
+    {"name": "Week", "label": "주차(ISO)", "type": "text", "required": true, "pattern": "^\\d{4}-W\\d{2}$", "example": "2026-W44"},
+    {"name": "PlantCode", "label": "공장코드", "type": "text", "required": true, "example": "PLT-A"},
+    {"name": "SKU", "label": "제품코드", "type": "text", "required": true, "example": "SKU-MOCK-101"},
+    {"name": "LineCode", "label": "라인코드", "type": "text", "required": true, "example": "L1"},
+    {"name": "BeginInv", "label": "기초재고", "type": "number", "required": true, "min": 0, "unit": "기준단위"},
+    {"name": "Production", "label": "생산실적", "type": "number", "required": true, "min": 0},
+    {"name": "Receipt", "label": "이동입고", "type": "number", "required": true, "min": 0},
+    {"name": "Shipment", "label": "출하", "type": "number", "required": true, "min": 0},
+    {"name": "Adjustment", "label": "재고조정(±)", "type": "number", "required": false},
+    {"name": "EndInv", "label": "기말재고", "type": "number", "required": true, "min": 0},
+    {"name": "PlanNextWeek", "label": "차주 생산계획", "type": "number", "required": true, "min": 0},
+    {"name": "RunHours", "label": "가동시간", "type": "number", "required": true, "min": 0},
+    {"name": "AvailHours", "label": "가용시간", "type": "number", "required": true, "min": 0},
+    {"name": "Remark", "label": "비고", "type": "text", "required": false}
+  ],
+  "systemColumns": ["SubmissionKey", "LoadedAtUtc", "LoadedBy"],
+  "rules": [
+    {"code": "E01", "severity": "Error", "rule": "필수 열 누락(머리글)"},
+    {"code": "E02", "severity": "Error", "rule": "필수 값 공란"},
+    {"code": "E03", "severity": "Error", "rule": "주차가 제출 대상 주차와 다름 또는 형식 오류"},
+    {"code": "E04", "severity": "Error", "rule": "공장코드가 제출 폴더의 공장과 다름"},
+    {"code": "E05", "severity": "Error", "rule": "SKU가 마스터에 없음"},
+    {"code": "E06", "severity": "Error", "rule": "숫자 아님 또는 음수 불가 항목이 음수"},
+    {"code": "E07", "severity": "Error", "rule": "Week+PlantCode+SKU+LineCode 중복"},
+    {"code": "E08", "severity": "Error", "rule": "PSI 수지 불일치: |기초+생산+입고−출하+조정−기말| > 허용오차(max(1, 0.1%×(기초+생산+입고)))"},
+    {"code": "W01", "severity": "Warning", "rule": "재고조정이 있는데 비고 없음"},
+    {"code": "W02", "severity": "Warning", "rule": "가동시간 > 가용시간 또는 가용시간 0"}
+  ],
+  "exceptionRules": [
+    {"code": "X01", "rule": "기초재고 ≠ 전주 기말재고(연속성)", "tolerance": "max(1, 0.1%)"},
+    {"code": "X02", "rule": "생산실적 전주 대비 ±30% 초과 변동(전주·금주 중 큰 값이 100 이상일 때)"},
+    {"code": "X03", "rule": "공장·라인 가동률 95% 초과(병목 후보)"},
+    {"code": "X04", "rule": "재고 커버 주수: 최근 4주 평균 출하 대비 기말재고 > 8주(과잉) 또는 < 1주(결품 위험)"},
+    {"code": "X05", "rule": "전주 '차주 생산계획' 대비 금주 생산실적 달성률 < 90% 또는 > 110%"}
+  ]
+}

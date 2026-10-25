@@ -1,0 +1,31 @@
+{
+  "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+  "type": "AdaptiveCard",
+  "version": "1.4",
+  "body": [
+    {"type": "TextBlock", "text": "이 메시지를 업무요청으로 등록", "weight": "Bolder", "size": "Medium"},
+    {"type": "Input.Text", "id": "title", "label": "요청 제목", "isRequired": true, "errorMessage": "제목을 입력하세요", "maxLength": 120},
+    {"type": "Input.ChoiceSet", "id": "requestType", "label": "요청유형", "isRequired": true, "value": "기타",
+     "choices": [
+      {"title": "시제품", "value": "시제품"},
+      {"title": "생산계획변경", "value": "생산계획변경"},
+      {"title": "공급·배분조정", "value": "공급·배분조정"},
+      {"title": "재고확인", "value": "재고확인"},
+      {"title": "데이터·분석요청", "value": "데이터·분석요청"},
+      {"title": "기타", "value": "기타"}
+     ]},
+    {"type": "Input.ChoiceSet", "id": "requestingDept", "label": "요청부서", "isRequired": true, "value": "기타",
+     "choices": [
+      {"title": "해외사업", "value": "해외사업"}, {"title": "국내영업", "value": "국내영업"},
+      {"title": "품질", "value": "품질"}, {"title": "연구개발", "value": "연구개발"},
+      {"title": "구매", "value": "구매"}, {"title": "물류", "value": "물류"},
+      {"title": "생산(공장)", "value": "생산(공장)"}, {"title": "기타", "value": "기타"}
+     ]},
+    {"type": "Input.Date", "id": "dueDateRequested", "label": "희망 완료일", "isRequired": true, "errorMessage": "날짜를 선택하세요"},
+    {"type": "Input.ChoiceSet", "id": "priority", "label": "우선순위", "value": "보통", "style": "compact",
+     "choices": [{"title": "긴급", "value": "긴급"}, {"title": "높음", "value": "높음"}, {"title": "보통", "value": "보통"}, {"title": "낮음", "value": "낮음"}]}
+  ],
+  "actions": [
+    {"type": "Action.Submit", "title": "등록"}
+  ]
+}

@@ -1,0 +1,22 @@
+{
+  "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+  "type": "AdaptiveCard",
+  "version": "1.4",
+  "body": [
+    {"type": "TextBlock", "text": "새 업무요청이 배정되었습니다", "weight": "Bolder", "size": "Medium", "wrap": true},
+    {"type": "TextBlock", "text": "{{RequestID}} · {{Title}}", "wrap": true, "spacing": "Small"},
+    {"type": "FactSet", "facts": [
+      {"title": "유형", "value": "{{RequestType}}"},
+      {"title": "요청자", "value": "{{RequesterName}} ({{RequestingDept}})"},
+      {"title": "희망 완료일", "value": "{{DueDateRequested}}"},
+      {"title": "SLA 목표일", "value": "{{SLATargetDate}}"},
+      {"title": "우선순위", "value": "{{Priority}}"}
+    ]},
+    {"type": "TextBlock", "text": "{{DuplicateWarning}}", "color": "Attention", "wrap": true, "isSubtle": false},
+    {"type": "TextBlock", "text": "다음 행동: 내용 확인 → '약속 완료일' 입력 → 상태를 '검토중' 또는 '정보보완'으로 변경", "wrap": true, "isSubtle": true, "size": "Small"}
+  ],
+  "actions": [
+    {"type": "Action.OpenUrl", "title": "요청 열기", "url": "{{ItemUrl}}"},
+    {"type": "Action.OpenUrl", "title": "내 담당 목록", "url": "{{MyViewUrl}}"}
+  ]
+}

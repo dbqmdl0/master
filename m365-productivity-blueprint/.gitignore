@@ -1,0 +1,3 @@
+__pycache__/
+*.pyc
+pilots/pilot_02/automation_assets/tests/build/

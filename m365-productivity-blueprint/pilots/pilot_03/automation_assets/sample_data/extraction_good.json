@@ -1,0 +1,14 @@
+{
+  "decisions": [
+    {"text": "해외-1 11월 증량 6천 확정, 잔여 6천은 12월 첫 주 이월", "decided_by": "한서연",
+     "evidence": "11월 증량은 6천으로 확정하고 나머지 6천은 12월 첫 주로 이월하는 것으로 결정합니다."}
+  ],
+  "actions": [
+    {"title": "라인 2 생산계획 수정본 공유", "owner_name": "최하은", "due_date": "2026-10-28", "due_text": "10월 28일까지",
+     "decision_ref": 1, "evidence": "최하은 님이 라인 2 생산계획 수정본을 10월 28일까지 공유해 주세요."},
+    {"title": "현지 법인에 이월 수량 안내", "owner_name": "박도윤", "due_date": "2026-10-26", "due_text": "오늘 중으로",
+     "decision_ref": 1, "evidence": "박도윤 님은 현지 법인에 이월 수량을 안내해 주시고요."},
+    {"title": "신규 포장재 승인 일정 확인·공유", "owner_name": "이민재", "due_date": null, "due_text": null,
+     "decision_ref": null, "evidence": "포장재 승인 일정은 제가 확인해서 알려드리겠습니다."}
+  ]
+}

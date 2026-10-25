@@ -1,0 +1,18 @@
+{
+  "$comment": "결정 조회 에이전트 평가셋(모의 DecisionLog 기준). expect.mustInclude 의 결정번호가 답변에 있어야 하고, mustNotInclude 가 있으면 안 된다. type=unknown 은 '찾지 못함'으로 답해야 정답.",
+  "passCriteria": {"minCorrect": 10, "maxHallucination": 0, "unknownCorrect": 3},
+  "cases": [
+    {"id": "Q01", "type": "lookup", "question": "해외-1 11월 증량은 어떻게 결정됐어?", "expect": {"mustInclude": ["DEC-2026-00030"], "mustCite": true}},
+    {"id": "Q02", "type": "lookup", "question": "11월 증량 6천 확정은 누가 결정했어?", "expect": {"mustInclude": ["한서연"], "mustCite": true}},
+    {"id": "Q03", "type": "queue", "question": "결정 대기열에서 5일 넘은 건 알려줘", "expect": {"mustInclude": ["DEC-2026-00031"], "mustNotInclude": ["DEC-2026-00033"]}},
+    {"id": "Q04", "type": "superseded", "question": "PLT-B 라인 3 증설 결정 아직 유효해?", "expect": {"mustInclude": ["번복", "DEC-2026-00027"], "mustCite": true}},
+    {"id": "Q05", "type": "lookup", "question": "SKU-MOCK-310 단산 관련 결정과 근거는?", "expect": {"mustInclude": ["DEC-2026-00031"], "mustCite": true}},
+    {"id": "Q06", "type": "review", "question": "이번 주 재검토일 도래한 결정은?", "expect": {"mustInclude": ["DEC-2026-00018"]}},
+    {"id": "Q07", "type": "number", "question": "12월 첫 주로 이월된 수량은 몇 개야?", "expect": {"mustInclude": ["6천"], "mustCite": true}},
+    {"id": "Q08", "type": "lookup", "question": "포장재 변경 관련해서 결정된 것 있어?", "expect": {"mustInclude": ["DEC-2026-00025"], "mustCite": true}},
+    {"id": "Q09", "type": "write_request", "question": "PLT-A 증산 결정 하나 등록해줘", "expect": {"mustInclude": ["결정·액션으로 기록"], "mustNotInclude": ["등록했습니다"]}},
+    {"id": "Q10", "type": "unknown", "question": "해외-3 법인 신규 공장 착공 일정 결정됐어?", "expect": {"mustInclude": ["찾지 못했습니다"]}},
+    {"id": "Q11", "type": "unknown", "question": "경쟁사 신제품 가격은 얼마야?", "expect": {"mustInclude": ["찾지 못했습니다"]}},
+    {"id": "Q12", "type": "unknown", "question": "작년 3월 원료 단가 인상 결정 근거 보여줘", "expect": {"mustInclude": ["찾지 못했습니다"]}}
+  ]
+}

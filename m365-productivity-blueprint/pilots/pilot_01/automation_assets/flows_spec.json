@@ -1,0 +1,97 @@
+{
+  "$comment": "Pilot 01 Flow 명세. tools/check_consistency.py가 이 파일의 열 참조를 lists_schema.json과 대조한다. 실제 Flow는 Power Automate 디자이너에서 이 명세대로 만든다(내보내기 패키지는 테넌트 접속 후 생성).",
+  "connectors": [
+    {"name": "SharePoint", "tier": "Standard"},
+    {"name": "Microsoft Teams", "tier": "Standard", "note": "Flow bot 게시는 Teams 관리 센터에서 Workflows 앱 허용 필요"},
+    {"name": "Approvals", "tier": "Standard"},
+    {"name": "Office 365 Users", "tier": "Standard"}
+  ],
+  "flows": [
+    {
+      "id": "P1-F1",
+      "name": "P1-F1 요청 접수 처리",
+      "trigger": {"type": "SharePoint - When an item is created", "list": "RequestHub"},
+      "concurrency": "기본(제한 없음)",
+      "reads": {"RequestHub": ["ID", "Created", "RequestType", "ProductCode", "Plant", "Requester", "DueDateRequested", "Status", "Title"],
+                "SLAPolicy": ["Title", "SLABusinessDays", "DefaultOwnerEmail", "RequiredFields"],
+                "Holidays": ["HolidayDate"]},
+      "writes": {"RequestHub": ["RequestID", "Owner", "SLATargetDate", "DuplicateKey", "PrevStatus", "PrevDueDateCommitted"],
+                 "RequestLog": ["Title", "RequestItemId", "EventType", "ToValue", "Actor", "EventAt", "FlowRunId", "Comment"],
+                 "FlowErrorLog": ["Title", "FlowRunId", "FailedAction", "ErrorMessage", "RelatedItem", "Severity", "Resolved", "RunUrl"]},
+      "steps": [
+        "Scope Try 시작",
+        "Get items(SLAPolicy) Filter: Title eq '<RequestType>' Top 1 → 없으면 '기타' 정책 사용",
+        "Get items(Holidays) → Select로 'yyyy-MM-dd' 문자열 배열 varHolidays",
+        "Compose CreatedKst = convertFromUtc(Created,'Korea Standard Time')",
+        "접수기준일 varD 계산(17시 컷오프·휴무 건너뛰기) → Do until로 SLABusinessDays 만큼 영업일 가산 → varD = SLA 목표일",
+        "Compose DuplicateKey",
+        "Get items(RequestHub) Filter: DuplicateKey eq '<key>' and ID ne <ID> and Status ne '완료' and Status ne '반려' and Status ne '취소' and Created ge '<14일 전>' Top 5",
+        "Update item(RequestHub): RequestID, Owner=DefaultOwnerEmail, SLATargetDate=varD, DuplicateKey, PrevStatus=Status, PrevDueDateCommitted=''",
+        "Create item(RequestLog) EventType=생성 (중복 후보가 있으면 EventType=중복의심 1건 추가)",
+        "Post card in a chat or channel(Flow bot → 담당자 채팅): cards/owner_new_request.json",
+        "Post message in a chat or channel(Flow bot → 요청자 채팅): 접수번호·SLA 목표일·조회 링크",
+        "Scope Catch(Try 실패/시간초과 시) → FlowErrorLog 기록 → 운영자에게 Teams 알림 → Terminate(Failed)"
+      ]
+    },
+    {
+      "id": "P1-F2",
+      "name": "P1-F2 상태·약속일 변경 처리",
+      "trigger": {"type": "SharePoint - When an item is created or modified", "list": "RequestHub",
+                  "triggerConditions": [
+                    "@not(empty(triggerOutputs()?['body/PrevStatus']))",
+                    "@or(not(equals(triggerOutputs()?['body/Status/Value'], triggerOutputs()?['body/PrevStatus'])), not(equals(coalesce(triggerOutputs()?['body/DueDateCommitted'], ''), coalesce(triggerOutputs()?['body/PrevDueDateCommitted'], ''))))"
+                  ]},
+      "concurrency": "기본(제한 없음) — 승인 대기 중인 실행이 다른 항목 처리를 막지 않도록",
+      "reads": {"RequestHub": ["ID", "RequestID", "Status", "PrevStatus", "DueDateCommitted", "PrevDueDateCommitted", "ChangeCount", "LastChangeReason", "Owner", "Requester", "RequestType", "Title", "Editor"],
+                "SLAPolicy": ["Title", "RequiresApproval", "ApproverEmail"]},
+      "writes": {"RequestHub": ["PrevStatus", "PrevDueDateCommitted", "ChangeCount", "ClosedDate", "ApprovalOutcome", "Status"],
+                 "RequestLog": ["Title", "RequestItemId", "EventType", "FromValue", "ToValue", "Actor", "EventAt", "Comment", "FlowRunId"],
+                 "FlowErrorLog": ["Title", "FlowRunId", "FailedAction", "ErrorMessage", "RelatedItem", "Severity", "Resolved", "RunUrl"]},
+      "steps": [
+        "Scope Try 시작",
+        "분기 A(상태 변경): 허용 전이표(expressions.md의 varTransitions)로 검사 → 위반이면 RequestLog에 '규칙위반' 기록 + 담당자 알림(되돌리지 않음)",
+        "분기 A-1: 새 상태가 완료/반려/취소면 ClosedDate=utcNow()",
+        "분기 A-2: 새 상태가 승인대기이고 SLAPolicy.RequiresApproval=예 → Update ApprovalOutcome=대기 → Start and wait for an approval(시간 제한 P7D) → 응답 후 Get item으로 현재 상태 재확인 → 여전히 승인대기일 때만 Status=진행중/반려, ApprovalOutcome 반영, PrevStatus=새 Status",
+        "분기 B(약속일 변경): PrevDueDateCommitted가 비어있지 않으면 ChangeCount+1, LastChangeReason 비어 있으면 담당자에게 사유 입력 요청 카드. ChangeCount>=3이면 RequestLog Comment='반복변경'",
+        "요청자에게 변경 알림(상태 또는 약속일 변경 시 1건 메시지)",
+        "Update item: PrevStatus=현재 Status, PrevDueDateCommitted=coalesce(DueDateCommitted,'') ← 반드시 마지막에 수행(자기 트리거 차단)",
+        "Scope Catch → FlowErrorLog"
+      ]
+    },
+    {
+      "id": "P1-F3",
+      "name": "P1-F3 SLA 일일 다이제스트·에스컬레이션",
+      "trigger": {"type": "Recurrence", "schedule": "매주 월~금 08:00, 표준시간대 (UTC+09:00) Seoul"},
+      "concurrency": "해당 없음",
+      "reads": {"RequestHub": ["ID", "RequestID", "Title", "Owner", "SLATargetDate", "Status", "RequestType"],
+                "SLAPolicy": ["Title", "EscalationEmail"],
+                "Holidays": ["HolidayDate"]},
+      "writes": {"RequestLog": ["Title", "RequestItemId", "EventType", "EventAt", "FlowRunId", "Comment"],
+                 "FlowErrorLog": ["Title", "FlowRunId", "FailedAction", "ErrorMessage", "RelatedItem", "Severity", "Resolved", "RunUrl"]},
+      "steps": [
+        "오늘(KST)이 휴무일이면 Terminate(Succeeded)",
+        "varDueSoonCutoff = 오늘+1영업일, varEscalationCutoff = escalation_cutoff 알고리즘(Do until 역방향)",
+        "Get items(RequestHub) Filter: SLATargetDate le '<varDueSoonCutoff>' and Status ne '완료' and Status ne '반려' and Status ne '취소', 페이지 매김 5000",
+        "Select Owner Email → union()으로 중복 제거 → Apply to each(담당자, 동시성 1)",
+        "Filter array로 overdue/due_soon/escalate 분류 → cards/sla_digest.json 1장 게시(담당자당 1건)",
+        "escalate 건은 EscalationEmail 대상에게 요약 1장 + RequestLog EventType=에스컬레이션(같은 날 중복 기록 금지: 당일 로그 존재 여부 확인)",
+        "Scope Catch → FlowErrorLog"
+      ]
+    },
+    {
+      "id": "P1-F4",
+      "name": "P1-F4 Teams 메시지에서 요청 등록",
+      "trigger": {"type": "Microsoft Teams - For a selected message", "inputCard": "cards/capture_request_from_message.json"},
+      "concurrency": "해당 없음",
+      "reads": {},
+      "writes": {"RequestHub": ["Title", "RequestType", "Requester", "RequestingDept", "DueDateRequested", "Priority", "Details", "Source", "Status"]},
+      "steps": [
+        "카드 입력값(유형·희망일·우선순위) + 원본 메시지 본문/링크를 Details에 기록",
+        "Requester = 원본 메시지 작성자(외부 사용자면 실행자)",
+        "Create item(RequestHub) → 이후는 P1-F1이 자동 처리",
+        "실행자에게 '등록됨: 항목 링크' 응답"
+      ],
+      "note": "기본(Default) 환경에 만든 Flow만 Teams 메시지 '추가 작업' 메뉴에 표시됨(검증 필요)."
+    }
+  ]
+}

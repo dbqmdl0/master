@@ -1,0 +1,78 @@
+{
+  "$comment": "Pilot 03 결정–액션 루프 데이터 구조. Pilot 01의 FlowErrorLog를 공용으로 사용.",
+  "site": "Pilot 01과 같은 SCM 팀 사이트",
+  "lists": [
+    {
+      "name": "DecisionLog",
+      "displayName": "결정 레지스터",
+      "versioning": true,
+      "purpose": "회의·채팅·메일에서 나온 '결정'의 단일 원본. 결정 1건 = 1행. 근거와 번복 이력까지 남긴다.",
+      "columns": [
+        {"internalName": "Title", "displayName": "결정 제목", "type": "Text", "required": true},
+        {"internalName": "DecisionID", "displayName": "결정번호", "type": "Text", "required": false, "indexed": true, "setBy": "flow"},
+        {"internalName": "DecisionText", "displayName": "결정 내용", "type": "Note", "required": true},
+        {"internalName": "Rationale", "displayName": "근거·전제", "type": "Note", "required": false},
+        {"internalName": "OptionsConsidered", "displayName": "검토한 대안", "type": "Note", "required": false},
+        {"internalName": "Status", "displayName": "상태", "type": "Choice", "required": true, "indexed": true,
+         "choices": ["제안", "결정요청", "확정", "보류", "번복"], "default": "확정"},
+        {"internalName": "Decider", "displayName": "결정권자", "type": "User", "required": false, "indexed": true},
+        {"internalName": "RequestedBy", "displayName": "결정 요청자", "type": "User", "required": false},
+        {"internalName": "RequestedAt", "displayName": "결정 요청일", "type": "DateTime", "required": false, "dateOnly": true},
+        {"internalName": "DecidedAt", "displayName": "확정일", "type": "DateTime", "required": false, "dateOnly": true},
+        {"internalName": "MeetingName", "displayName": "회의명", "type": "Text", "required": false},
+        {"internalName": "MeetingDate", "displayName": "회의일", "type": "DateTime", "required": false, "dateOnly": true},
+        {"internalName": "Impact", "displayName": "영향도", "type": "Choice", "required": false, "choices": ["고", "중", "저"], "default": "중"},
+        {"internalName": "ReviewDate", "displayName": "재검토일", "type": "DateTime", "required": false, "dateOnly": true},
+        {"internalName": "SourceLink", "displayName": "원문 링크", "type": "Text", "required": false},
+        {"internalName": "RelatedRequestID", "displayName": "관련 요청번호", "type": "Text", "required": false, "indexed": true},
+        {"internalName": "SupersededBy", "displayName": "대체한 결정번호", "type": "Text", "required": false},
+        {"internalName": "CreatedVia", "displayName": "등록 경로", "type": "Choice", "required": false,
+         "choices": ["수동", "Teams 메시지", "AI 제안 승인"], "default": "수동"},
+        {"internalName": "PrevStatus", "displayName": "이전 상태(시스템)", "type": "Text", "required": false, "setBy": "flow", "hidden": true}
+      ],
+      "views": [
+        {"name": "결정 대기열", "filter": "Status = 결정요청", "sort": "RequestedAt asc"},
+        {"name": "나의 결정 대기", "filter": "Status = 결정요청 AND Decider = [Me]", "sort": "RequestedAt asc"},
+        {"name": "최근 확정 30일", "filter": "Status = 확정 AND DecidedAt >= [Today]-30", "sort": "DecidedAt desc"},
+        {"name": "재검토 도래", "filter": "ReviewDate <= [Today]+7 AND Status = 확정"}
+      ],
+      "permissions": "SCM 팀 편집 / 협업 부서 읽기(결정 공유가 목적). 민감 결정은 별도 목록 또는 항목 권한."
+    },
+    {
+      "name": "ActionItems",
+      "displayName": "액션 아이템",
+      "versioning": true,
+      "purpose": "결정·회의·메일에서 생긴 후속조치의 단일 원본. 회의록·주간보고·진행현황 회의를 대체한다.",
+      "columns": [
+        {"internalName": "Title", "displayName": "할 일", "type": "Text", "required": true},
+        {"internalName": "ActionID", "displayName": "액션번호", "type": "Text", "required": false, "indexed": true, "setBy": "flow"},
+        {"internalName": "DecisionID", "displayName": "결정번호", "type": "Text", "required": false, "indexed": true},
+        {"internalName": "Owner", "displayName": "담당자", "type": "User", "required": true, "indexed": true},
+        {"internalName": "DueDate", "displayName": "기한", "type": "DateTime", "required": false, "dateOnly": true, "indexed": true},
+        {"internalName": "Status", "displayName": "상태", "type": "Choice", "required": true, "indexed": true,
+         "choices": ["미착수", "진행중", "완료", "보류", "취소"], "default": "미착수"},
+        {"internalName": "Priority", "displayName": "우선순위", "type": "Choice", "required": false, "choices": ["높음", "보통", "낮음"], "default": "보통"},
+        {"internalName": "ActionType", "displayName": "유형", "type": "Choice", "required": true, "choices": ["실행", "회신대기"], "default": "실행"},
+        {"internalName": "Source", "displayName": "출처", "type": "Choice", "required": false,
+         "choices": ["회의", "이메일", "Teams 메시지", "업무요청", "기타"], "default": "회의"},
+        {"internalName": "SourceLink", "displayName": "원문 링크", "type": "Text", "required": false},
+        {"internalName": "Evidence", "displayName": "근거 문장", "type": "Note", "required": false},
+        {"internalName": "CompletedAt", "displayName": "완료일시", "type": "DateTime", "required": false, "setBy": "flow"},
+        {"internalName": "ReminderCount", "displayName": "리마인더 횟수", "type": "Number", "required": false, "default": 0, "setBy": "flow"},
+        {"internalName": "LastRemindedAt", "displayName": "최근 리마인더", "type": "DateTime", "required": false, "setBy": "flow"},
+        {"internalName": "CreatedVia", "displayName": "등록 경로", "type": "Choice", "required": false,
+         "choices": ["수동", "Teams 메시지", "Outlook 플래그", "AI 제안 승인"], "default": "수동"},
+        {"internalName": "SourceMessageId", "displayName": "원본 메시지 ID(시스템)", "type": "Text", "required": false, "indexed": true, "setBy": "flow", "hidden": true,
+         "note": "같은 메일·메시지로 액션이 두 번 생기지 않게 하는 중복 방지 키"},
+        {"internalName": "PrevStatus", "displayName": "이전 상태(시스템)", "type": "Text", "required": false, "setBy": "flow", "hidden": true}
+      ],
+      "views": [
+        {"name": "내 액션", "filter": "Owner = [Me] AND Status IN (미착수, 진행중)", "sort": "DueDate asc"},
+        {"name": "기한 초과", "filter": "DueDate < [Today] AND Status IN (미착수, 진행중)", "sort": "DueDate asc"},
+        {"name": "이번 주 완료", "filter": "Status = 완료 AND CompletedAt >= [Today]-7"},
+        {"name": "보드", "type": "Board", "groupBy": "Status"}
+      ],
+      "permissions": "SCM 팀 및 회의 참석 부서 편집(본인 항목 상태 변경), 관리자 전체"
+    }
+  ]
+}

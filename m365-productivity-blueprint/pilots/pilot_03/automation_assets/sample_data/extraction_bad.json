@@ -1,0 +1,15 @@
+{
+  "decisions": [
+    {"text": "PLT-B로 생산 이관 결정", "decided_by": "한서연", "evidence": "PLT-B로 생산을 이관하기로 결정합니다."},
+    {"text": "11월 증량 6천 확정", "decided_by": "김부장", "evidence": "11월 증량은 6천으로 확정하고"}
+  ],
+  "actions": [
+    {"title": "라인 2 생산계획 수정본 공유", "owner_name": "최하은", "due_date": "2026-10-30", "due_text": "다음 주 금요일",
+     "decision_ref": 1, "evidence": "최하은 님이 라인 2 생산계획 수정본을 10월 28일까지 공유해 주세요."},
+    {"title": "라인2 생산계획 수정본 공유", "owner_name": "최하은", "due_date": null, "due_text": null,
+     "decision_ref": 1, "evidence": "라인 2 생산계획 수정본"},
+    {"title": "포장재 공급사 미팅", "owner_name": "구매팀", "due_date": "2027-12-01", "due_text": null,
+     "decision_ref": 9, "evidence": "공급사와 미팅을 잡겠습니다."},
+    {"owner_name": "이민재"}
+  ]
+}

@@ -1,0 +1,101 @@
+{
+  "$comment": "Pilot 03 Flow 명세. 열 참조는 lists_schema.json(DecisionLog, ActionItems) 및 Pilot 01 RequestHub와 대조된다.",
+  "connectors": [
+    {"name": "SharePoint", "tier": "Standard"},
+    {"name": "Microsoft Teams", "tier": "Standard"},
+    {"name": "Office 365 Outlook", "tier": "Standard"},
+    {"name": "Office 365 Users", "tier": "Standard"}
+  ],
+  "flows": [
+    {
+      "id": "P3-F1",
+      "name": "P3-F1 Teams 메시지 → 결정·액션 기록",
+      "trigger": {"type": "Microsoft Teams - For a selected message", "inputCard": "cards/capture_decision_action.json"},
+      "reads": {},
+      "writes": {"ActionItems": ["Title", "Owner", "DueDate", "Status", "ActionType", "Source", "SourceLink", "Evidence", "DecisionID", "CreatedVia", "SourceMessageId", "PrevStatus"],
+                 "DecisionLog": ["Title", "DecisionText", "Status", "Decider", "RequestedBy", "RequestedAt", "DecidedAt", "SourceLink", "CreatedVia", "PrevStatus"]},
+      "steps": [
+        "ownerEmail 비었으면 실행자 이메일 사용 → Office 365 Users 'Get user profile (V2)'로 실존 확인(실패 시 실행자에게 오류 응답)",
+        "SourceMessageId = 메시지 ID. 같은 ID로 이미 등록된 ActionItems가 있으면 '이미 기록됨' 응답 후 종료(중복 방지)",
+        "kind=액션 → ActionItems 생성(Status=미착수, Evidence=메시지 본문 앞 1,000자, SourceLink=메시지 링크)",
+        "kind=결정 → DecisionLog 생성(Status=확정, DecidedAt=오늘), kind=결정요청 → Status=결정요청, Decider=ownerEmail, RequestedAt=오늘",
+        "생성 후 번호 부여는 P3-F2가 처리 → 실행자에게 링크 응답"
+      ]
+    },
+    {
+      "id": "P3-F2",
+      "name": "P3-F2 번호 부여·상태 변경 기록",
+      "trigger": {"type": "SharePoint - When an item is created or modified", "list": "ActionItems",
+                  "triggerConditions": ["@or(empty(triggerOutputs()?['body/ActionID']), not(equals(triggerOutputs()?['body/Status/Value'], triggerOutputs()?['body/PrevStatus'])))"]},
+      "reads": {"ActionItems": ["ID", "Created", "ActionID", "Status", "PrevStatus"]},
+      "writes": {"ActionItems": ["ActionID", "CompletedAt", "PrevStatus"]},
+      "steps": [
+        "ActionID 비었으면 concat('ACT-', 연도, '-', formatNumber(ID,'00000'))",
+        "Status가 완료로 바뀌면 CompletedAt=utcNow(), 완료 → 다른 상태로 되돌리면 CompletedAt 비움",
+        "PrevStatus=Status (마지막에, 자기 트리거 차단)",
+        "DecisionLog도 같은 패턴의 별도 Flow(P3-F2b)로 DecisionID·DecidedAt 처리"
+      ]
+    },
+    {
+      "id": "P3-F3",
+      "name": "P3-F3 Outlook 플래그 → 액션/회신대기 등록",
+      "trigger": {"type": "Office 365 Outlook - When an email is flagged (V4)", "folders": ["Inbox", "Sent Items"]},
+      "reads": {"ActionItems": ["SourceMessageId"]},
+      "writes": {"ActionItems": ["Title", "Owner", "DueDate", "Status", "ActionType", "Source", "SourceLink", "Evidence", "CreatedVia", "SourceMessageId", "PrevStatus"]},
+      "steps": [
+        "SourceMessageId(메일 ID)로 기존 항목 조회 → 있으면 종료(같은 메일 재플래그 시 중복 방지)",
+        "받은편지함 플래그 → ActionType=실행, 보낸편지함 플래그 → ActionType=회신대기",
+        "Title='[메일] '+제목, DueDate=플래그 기한(없으면 수신일+3영업일 대신 '기한 없음'으로 두고 브리핑에서 표시)",
+        "Evidence=본문 미리보기(bodyPreview), SourceLink=메일 웹 링크(webLink)",
+        "메일 본문 전체·첨부는 저장하지 않음(데이터 최소화)"
+      ]
+    },
+    {
+      "id": "P3-F4",
+      "name": "P3-F4 아침 브리핑",
+      "trigger": {"type": "Recurrence", "schedule": "월~금 07:40, (UTC+09:00) Seoul"},
+      "reads": {"ActionItems": ["ActionID", "Title", "DueDate", "Status", "ActionType", "Owner"],
+                "DecisionLog": ["DecisionID", "Title", "Status", "Decider", "RequestedAt"],
+                "RequestHub": ["RequestID", "Title", "Owner", "SLATargetDate", "Status"]},
+      "writes": {},
+      "steps": [
+        "오늘이 휴무일(Holidays)이면 종료",
+        "Office 365 Outlook 'Get calendar view of events (V3)' 오늘 00:00~23:59 KST → convertFromUtc로 KST 변환",
+        "ActionItems Filter: Owner/EMail eq '<나>' and (Status eq '미착수' or Status eq '진행중') and DueDate le '<오늘>'",
+        "DecisionLog Filter: Status eq '결정요청' and Decider/EMail eq '<나>'",
+        "RequestHub Filter: Owner/EMail eq '<나>' and SLATargetDate le '<오늘+1영업일>' and 미종료",
+        "점수 규칙(python/daily_brief.py SCORE와 동일)으로 Compose 'Score' → 정렬(sort 함수) → 상위 5",
+        "집중 가능 시간(09~18시 빈 60분 이상) 계산 → 카드(cards/daily_brief_example.json 구조) 게시: Flow bot → 나에게 채팅",
+        "Scope Catch → FlowErrorLog"
+      ],
+      "scenarioC": "Copilot 라이선스가 있으면 Copilot Chat의 '프롬프트 예약'으로 받은편지함·Teams 요약을 별도로 받고, 이 Flow는 Lists 기반 미결 항목만 담당(역할 분리)"
+    },
+    {
+      "id": "P3-F5",
+      "name": "P3-F5 주간 현황 다이제스트(주간보고·현황회의 대체)",
+      "trigger": {"type": "Recurrence", "schedule": "금 16:00, (UTC+09:00) Seoul"},
+      "reads": {"ActionItems": ["ActionID", "Title", "Owner", "DueDate", "Status", "CompletedAt"],
+                "DecisionLog": ["DecisionID", "Title", "Status", "DecidedAt", "RequestedAt"]},
+      "writes": {},
+      "steps": [
+        "이번 주 완료 액션, 기한 초과 액션(담당자별 건수), 이번 주 확정 결정, 7일 넘은 결정 대기를 집계",
+        "Teams 팀 채널에 카드 1장 게시. 팀원은 '막힌 것'만 스레드에 답글(진행 보고 금지)",
+        "다이제스트 게시 후 다음 주 월요일 현황회의는 '스레드에 답글이 달린 막힌 건'만 15분 다룸(회의 제거 규칙)"
+      ]
+    },
+    {
+      "id": "P3-F6",
+      "name": "P3-F6 액션 리마인더·에스컬레이션",
+      "trigger": {"type": "Recurrence", "schedule": "월~금 08:30, (UTC+09:00) Seoul"},
+      "reads": {"ActionItems": ["ActionID", "Title", "Owner", "DueDate", "Status", "ReminderCount", "LastRemindedAt", "DecisionID"],
+                "DecisionLog": ["DecisionID", "Decider"]},
+      "writes": {"ActionItems": ["ReminderCount", "LastRemindedAt"]},
+      "steps": [
+        "기한 D-1·당일·초과 액션을 담당자별 1장으로 묶어 알림(건별 알림 금지)",
+        "같은 날 이미 알린 항목은 제외(LastRemindedAt 날짜 = 오늘)",
+        "ReminderCount >= 3 이고 기한 초과면 연결된 결정의 결정권자에게 주 1회 요약",
+        "Scope Catch → FlowErrorLog"
+      ]
+    }
+  ]
+}

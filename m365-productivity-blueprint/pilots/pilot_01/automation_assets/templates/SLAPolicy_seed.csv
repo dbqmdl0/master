@@ -1,0 +1,7 @@
+Title,SLABusinessDays,RequiresApproval,ApproverEmail,DefaultOwnerEmail,EscalationEmail,RequiredFields
+시제품,5,예,approver@example.com,owner.proto@example.com,lead@example.com,Plant;ProductCode;Quantity
+생산계획변경,3,예,approver@example.com,owner.plan@example.com,lead@example.com,Plant;ProductCode;Quantity
+공급·배분조정,3,예,approver@example.com,owner.plan@example.com,lead@example.com,Plant;ProductCode;Quantity
+재고확인,1,아니요,,owner.inv@example.com,lead@example.com,ProductCode
+데이터·분석요청,5,아니요,,owner.data@example.com,lead@example.com,
+기타,3,아니요,,owner.plan@example.com,lead@example.com,

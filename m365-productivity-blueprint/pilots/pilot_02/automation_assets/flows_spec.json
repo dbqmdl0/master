@@ -1,0 +1,70 @@
+{
+  "$comment": "Pilot 02 Flow 명세. 스크립트 이름·매개변수는 office_scripts/*.ts 의 main() 시그니처와 일치해야 한다(tools/check_consistency.py 검사).",
+  "connectors": [
+    {"name": "SharePoint", "tier": "Standard"},
+    {"name": "Excel Online (Business)", "tier": "Standard", "limits": "Run script 1,600회/일·사용자, 동기 120초, 요청·응답 5MB, 파일 25MB"},
+    {"name": "Microsoft Teams", "tier": "Standard"}
+  ],
+  "storage": {
+    "submissionLibrary": "SCM_Submissions/<Week>/<PlantCode>/파일.xlsx",
+    "masterWorkbook": "SCM_Master/SCM_Master_Fact.xlsx (tblFact, tblSKU, Exceptions)",
+    "scriptLibrary": "SCM_Automation/Scripts/*.osts (팀 공유, 개인 OneDrive 의존 제거)",
+    "lists": ["SubmissionLog", "SubmissionCalendar", "FlowErrorLog"]
+  },
+  "lists": [
+    {"name": "SubmissionLog", "columns": ["Title(SubmissionKey)", "Week", "PlantCode", "FileUrl", "Result(합격/반려/오류)", "ErrorCount", "WarningCount", "ValidatedAt", "LoadedAt", "Submitter", "ETag", "FlowRunId", "Attempt"]},
+    {"name": "SubmissionCalendar", "columns": ["Title(Week)", "DueAtKst", "ExpectedPlants(세미콜론)", "Status(수집중/완료/마감초과)", "ReportPostedAt"]}
+  ],
+  "flows": [
+    {
+      "id": "P2-F1",
+      "name": "P2-F1 제출 파일 검증·반영",
+      "trigger": {"type": "SharePoint - When a file is created or modified (properties only)", "library": "SCM_Submissions",
+                  "triggerConditions": ["@endsWith(toLower(triggerOutputs()?['body/{FilenameWithExtension}']), '.xlsx')"]},
+      "concurrency": "트리거 동시성 1 (마스터 동시 쓰기 차단, 제출량이 주 수십 건이라 대기 영향 미미)",
+      "scripts": [
+        {"script": "ValidateSubmission", "target": "제출 파일", "params": ["expectedWeek", "plantCode", "validSkusCsv"]},
+        {"script": "AppendToMaster", "target": "마스터 파일", "params": ["submissionKey", "rowsJson", "loadedBy"]}
+      ],
+      "steps": [
+        "Scope Try",
+        "폴더 경로에서 Week·PlantCode 추출: split(triggerOutputs()?['body/{Path}'], '/') → 끝에서 3번째·2번째 요소",
+        "지연(Delay) 60초 — 사용자가 저장을 마칠 시간(연속 자동저장 이벤트 흡수)",
+        "Get file properties로 최신 ETag 확인 → SubmissionLog에 같은 Key·같은 ETag(열 ETag)가 이미 '합격'이면 종료(중복 실행 방지)",
+        "Excel Online - Run script from SharePoint library: ValidateSubmission(제출 파일) — validSkusCsv는 마스터 tblSKU의 List rows present in a table → join()",
+        "조건 ok=false → SubmissionLog '반려' 기록 → 제출자에게 오류 카드(issues 상위 20개 + 파일 링크) → 종료",
+        "ok=true → Run script from SharePoint library: AppendToMaster(마스터 파일, submissionKey, rowsJson, 제출자 이메일)",
+        "AppendToMaster ok=false → FlowErrorLog(Critical) + 운영자 알림",
+        "SubmissionLog '합격' 기록(LoadedAt, ETag) → 제출자에게 합격 메시지(경고 W 코드가 있으면 함께)",
+        "SubmissionCalendar의 ExpectedPlants 전부 '합격'이면 P2-F3 호출 조건 충족 표시(Status=완료)",
+        "Scope Catch → FlowErrorLog + 운영자 알림"
+      ]
+    },
+    {
+      "id": "P2-F2",
+      "name": "P2-F2 제출 마감 리마인더",
+      "trigger": {"type": "Recurrence", "schedule": "매주 월 09:00, 화 09:00 (마감 화 12:00 가정), (UTC+09:00) Seoul"},
+      "steps": [
+        "이번 주 SubmissionCalendar 행 조회 → ExpectedPlants 중 SubmissionLog '합격' 없는 공장 계산(Filter array + 차집합)",
+        "미제출 공장 담당자에게만 리마인더(이미 제출한 공장에는 보내지 않음)",
+        "마감 경과 후에도 미제출이면 Status=마감초과, SCM 담당자에게 1건 요약"
+      ]
+    },
+    {
+      "id": "P2-F3",
+      "name": "P2-F3 주간 예외 리포트 게시",
+      "trigger": {"type": "SharePoint - When an item is created or modified", "list": "SubmissionCalendar",
+                  "triggerConditions": ["@and(equals(triggerOutputs()?['body/Status/Value'], '완료'), empty(triggerOutputs()?['body/ReportPostedAt']))"]},
+      "scripts": [
+        {"script": "BuildExceptionReport", "target": "마스터 파일", "params": ["week"]}
+      ],
+      "steps": [
+        "Run script from SharePoint library: BuildExceptionReport(마스터, week)",
+        "counts·top으로 Teams 채널 카드 1장: High 건수 강조, 마스터 'Exceptions' 시트 링크",
+        "예외 0건이면 '정상' 한 줄만 게시(침묵 원칙: 상세 없음)",
+        "SubmissionCalendar.ReportPostedAt = utcNow() (재게시 방지)",
+        "Scope Catch → FlowErrorLog"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,4 @@
+Title,RequestType,RequestingDept,Plant,ProductCode,Quantity,DueDateRequested,Priority,Details,Status,Source
+[모의] 신규 캡슐 시제품 200갑,시제품,연구개발,PLT-A,SKU-MOCK-101,200,2026-11-12,높음,모의 데이터 - 관능평가용,접수,Lists 양식
+[모의] 해외-1 11월 공급량 증량 검토,공급·배분조정,해외사업,해외-1,SKU-MOCK-205,12000,2026-11-06,긴급,모의 데이터 - 현지 판촉 대응,검토중,이메일
+[모의] 포장재 변경 SKU 재고 확인,재고확인,구매,PLT-B,SKU-MOCK-310,,2026-10-30,보통,모의 데이터 - 구포장재 소진 계획,진행중,Teams 메시지
