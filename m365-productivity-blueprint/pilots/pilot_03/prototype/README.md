@@ -19,7 +19,7 @@
 | `BUILD_GUIDE.md` | **클릭 순서 구축 가이드**(사전 점검 → 목록 → 스크립트 → 흐름 → Copilot → 테스트 → 운영 전환) |
 | `BUILD_TABLES.md` | 흐름 9개의 액션별 입력값 표(자동 생성) |
 | `LISTS_SETUP.md` | 목록 7개의 열 설정표(자동 생성) |
-| `TEST_REPORT.md` | 테스트 설계·결과(로컬 56건 통과) + 테넌트 테스트 T01~T15 |
+| `TEST_REPORT.md` | 테스트 설계·결과(로컬 64건 통과) + 테넌트 테스트 T01~T15 |
 | `APPROVALS.md` | 사용자 승인 / 팀장 결정 / IT 지원 구분 + IT 요청 메일 초안 |
 | `MEASUREMENT.md` | 기대효과(개인 순절감 108.7h/년, 가정)와 검증 방법 |
 | `LIMITATIONS.md` | 구현 못 한 부분·원인·대체안, 에뮬레이터 한계 |
@@ -39,7 +39,7 @@ cd m365-productivity-blueprint/pilots/pilot_03/prototype
 python3 tools/build_flows.py            # 흐름 정의 재생성(수정 시)
 python3 tools/lint_flows.py             # 정적 검사
 python3 tools/render_build_tables.py    # 입력표 재생성
-python3 -m unittest tests/test_scenarios.py tests/test_office_scripts.py tests/test_mutations.py tests/test_kpi.py
+python3 -m unittest tests/test_scenarios.py tests/test_office_scripts.py tests/test_mutations.py tests/test_kpi.py tests/test_email_mode.py
 ```
 필요: Python 3.10+, Node 18+, TypeScript(`tsc`). 외부 접속 없음, 가상 데이터만 사용.
 

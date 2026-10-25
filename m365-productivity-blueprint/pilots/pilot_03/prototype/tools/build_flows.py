@@ -16,7 +16,7 @@ T = "triggerOutputs()?['body/{}']"
 
 CONFIG = {"type": "Compose", "note": "설정값 모음. 샌드박스→운영 전환 시 이 값만 바꾼다(트리거의 사이트·목록은 직접 다시 선택).",
           "inputs": {"site": SITE, "me": "{{ME}}", "hostWorkbook": "{{HOST_WORKBOOK}}",
-                     "scriptFolder": "{{SCRIPT_FOLDER}}", "prototypeMode": True,
+                     "scriptFolder": "{{SCRIPT_FOLDER}}", "prototypeMode": True, "channel": "{{NOTIFY_CHANNEL}}",
                      "links": {"myActions": "{{VIEW_MY_ACTIONS}}", "decisionQueue": "{{VIEW_DECISION_QUEUE}}",
                                "candidates": "{{VIEW_CANDIDATES}}"}}}
 CFG = "outputs('Config')"
@@ -45,16 +45,51 @@ def sp(op, lst, note="", runAfter=None, **kw):
     return a
 
 
-def card_to_me(card_expr, note="본인에게 Flow bot 채팅으로 카드 게시"):
-    return {"type": "Connector", "connector": "Microsoft Teams", "operation": "Post card in a chat or channel",
-            "inputs": {"poster": "Flow bot", "location": "Chat with Flow bot", "recipient": f"@{{{CFG}?['me']}}",
-                       "card": card_expr}, "note": note}
+def card_to_me(card_expr, html_expr, subject, recipient=None, note="본인에게 알림(카드 또는 메일)"):
+    """알림 자리표시. expand_notify()가 '채널 설정(teams/email)' 조건으로 펼친다."""
+    return {"type": "_Notify", "kind": "card", "card": card_expr, "html": html_expr, "subject": subject,
+            "recipient": recipient or f"@{{{CFG}?['me']}}", "note": note}
 
 
-def msg_to_me(text, note="본인에게 Flow bot 메시지"):
-    return {"type": "Connector", "connector": "Microsoft Teams", "operation": "Post message in a chat or channel",
-            "inputs": {"poster": "Flow bot", "location": "Chat with Flow bot", "recipient": f"@{{{CFG}?['me']}}",
-                       "message": text}, "note": note}
+def msg_to_me(text, subject="[P3 알림]", note="본인에게 알림(Teams 메시지 또는 메일)"):
+    return {"type": "_Notify", "kind": "message", "text": text, "subject": subject,
+            "recipient": f"@{{{CFG}?['me']}}", "note": note}
+
+
+def _notify_if(name, n):
+    """Workflows(Teams) 앱이 없으면 channel=email 로 두고 본인 메일로 받는다. 앱이 허용되면 teams 로 바꾼다."""
+    if n["kind"] == "card":
+        teams = {"type": "Connector", "connector": "Microsoft Teams", "operation": "Post card in a chat or channel",
+                 "inputs": {"poster": "Flow bot", "location": "Chat with Flow bot", "recipient": n["recipient"], "card": n["card"]},
+                 "note": "Teams Flow bot 카드", "runAfter": {}}
+        body = n["html"]
+    else:
+        teams = {"type": "Connector", "connector": "Microsoft Teams", "operation": "Post message in a chat or channel",
+                 "inputs": {"poster": "Flow bot", "location": "Chat with Flow bot", "recipient": n["recipient"], "message": n["text"]},
+                 "note": "Teams Flow bot 메시지", "runAfter": {}}
+        body = n["text"]
+    email = {"type": "Connector", "connector": "Office 365 Outlook", "operation": "Send an email (V2)",
+             "inputs": {"to": n["recipient"], "subject": n["subject"], "body": body},
+             "note": "메일 알림(Workflows 앱 없을 때)", "runAfter": {}}
+    a = {"type": "If", "expression": f"@equals({CFG}?['channel'], 'teams')",
+         "actions": {f"{name}_teams": teams}, "else": {"actions": {f"{name}_email": email}},
+         "note": n["note"] + " — 설정 channel 이 teams 면 Teams, 아니면 메일"}
+    if "runAfter" in n:
+        a["runAfter"] = n["runAfter"]
+    return a
+
+
+def expand_notify(actions: dict) -> dict:
+    for name in list(actions):
+        a = actions[name]
+        if a.get("type") == "_Notify":
+            actions[name] = _notify_if(name, a)
+            continue
+        if "actions" in a:
+            expand_notify(a["actions"])
+        if "else" in a:
+            expand_notify(a["else"]["actions"])
+    return actions
 
 
 def script(name, params, note):
@@ -105,39 +140,65 @@ def flow(fid, name, trigger, try_actions, pre=None, catch_extra=None, purpose=""
     last = list(top)[-1]
     top["Try"] = {"type": "Scope", "runAfter": {last: ["Succeeded"]}, "actions": chain(try_actions)}
     top["Catch"] = catch(catch_extra)
+    expand_notify(top)
     return {"id": fid, "name": name, "purpose": purpose, "trigger": trigger, "actions": top}
 
 
-def flag_flow(fid, folder, action_type, prefix, default_due_days):
+def flag_flow(fid, folder, action_type, prefix, default_due_days, route_decisions=False):
     due = (f"@if(empty({t('flag/dueDateTime/dateTime')}), "
            + ("null" if default_due_days is None else
               f"formatDateTime(addDays(convertFromUtc(utcNow(), 'Korea Standard Time'), {default_due_days}), 'yyyy-MM-dd')")
            + f", formatDateTime({t('flag/dueDateTime/dateTime')}, 'yyyy-MM-dd'))")
+    msg_id = f"replace({t('id')}, '''', '''''')"
+    create_action = {
+        "Title_text": {"type": "Compose", "note": "제목 없음 대비 + 접두어",
+                       "inputs": f"@{{concat('{prefix}', if(empty({t('subject')}), '(제목 없음)', {t('subject')}))}}"},
+        "Create_action": sp("Create item", "ActionItems", "액션 등록", item={
+            "Title": "@{if(greater(length(outputs('Title_text')), 250), substring(outputs('Title_text'), 0, 250), outputs('Title_text'))}",
+            "Owner/Claims": f"@{{{CFG}?['me']}}",
+            "Status/Value": "미착수", "ActionType/Value": action_type, "Source/Value": "이메일",
+            "CreatedVia/Value": "Outlook 플래그", "Priority/Value": "보통",
+            "SourceLink": f"@{{coalesce({t('webLink')}, '')}}",
+            "Evidence": f"@{{coalesce({t('bodyPreview')}, '')}}",
+            "SourceMessageId": f"@{{{t('id')}}}",
+            "DueDate": due}),
+    }
+    acts = {
+        "Check_message_id": iff(f"@empty({t('id')})",
+                                {"Stop_no_id": terminate("Failed", "InputMissing", "메일 ID가 없어 중복 확인을 할 수 없습니다")},
+                                note="메일 ID 누락 방어"),
+        "Find_existing": sp("Get items", "ActionItems", "같은 메일로 이미 만든 액션이 있는지(중복 방지)",
+                            filter=f"SourceMessageId eq '@{{{msg_id}}}'", top=1),
+    }
+    dup = "greater(length(body('Find_existing')?['value']), 0)"
+    if route_decisions:
+        acts["Find_existing_decision"] = sp("Get items", "DecisionLog", "같은 메일로 이미 만든 결정이 있는지",
+                                            filter=f"SourceMessageId eq '@{{{msg_id}}}'", top=1)
+        dup = f"or({dup}, greater(length(body('Find_existing_decision')?['value']), 0))"
+    acts["If_duplicate"] = iff(f"@{dup}", {"Stop_duplicate": terminate("Succeeded", "Duplicate", "이미 등록된 메일")},
+                               note="중복이면 성공으로 종료")
+    if not route_decisions:
+        acts.update(create_action)
+    else:
+        cats = f"coalesce({t('categories')}, createArray())"
+        subj = f"if(empty({t('subject')}), '(제목 없음)', {t('subject')})"
+        acts["Kind"] = {"type": "Compose", "note": "Outlook 범주로 종류 판별: '결정요청'/'결정' 범주가 있으면 결정, 없으면 할 일",
+                        "inputs": f"@{{if(contains({cats}, '결정요청'), '결정요청', if(contains({cats}, '결정'), '결정', '액션'))}}"}
+        acts["If_action"] = iff("@equals(outputs('Kind'), '액션')", create_action, {
+            "Create_decision": sp("Create item", "DecisionLog", "결정 또는 결정요청 등록", item={
+                "Title": f"@{{if(greater(length({subj}), 250), substring({subj}, 0, 250), {subj})}}",
+                "DecisionText": f"@{{concat({subj}, ' / 원문: ', coalesce({t('bodyPreview')}, ''))}}",
+                "Status/Value": "@{if(equals(outputs('Kind'), '결정요청'), '결정요청', '확정')}",
+                "Decider/Claims": f"@{{{CFG}?['me']}}", "RequestedBy/Claims": f"@{{{CFG}?['me']}}",
+                "SourceLink": f"@{{coalesce({t('webLink')}, '')}}", "CreatedVia/Value": "Outlook 플래그",
+                "SourceMessageId": f"@{{{t('id')}}}"}),
+        }, note="종류별 분기: 할 일 / 결정·결정요청")
+    extra = " 범주 '결정'·'결정요청'이 붙은 메일은 DecisionLog로 기록(Teams 메시지 기록의 대체 경로)." if route_decisions else ""
     return flow(
-        fid, f"{fid} 메일 플래그({folder}) → {action_type} 등록",
+        fid, f"{fid} 메일 플래그({folder}) → {action_type if not route_decisions else '할 일·결정'} 등록",
         {"kind": "Outlook.WhenAnEmailIsFlaggedV4", "inputs": {"folder": folder}, "concurrency": 1},
-        {
-            "Check_message_id": iff(f"@empty({t('id')})",
-                                    {"Stop_no_id": terminate("Failed", "InputMissing", "메일 ID가 없어 중복 확인을 할 수 없습니다")},
-                                    note="메일 ID 누락 방어"),
-            "Find_existing": sp("Get items", "ActionItems", "같은 메일로 이미 만든 액션이 있는지(중복 방지)",
-                                filter=f"SourceMessageId eq '@{{replace({t('id')}, '''', '''''')}}'", top=1),
-            "If_duplicate": iff("@greater(length(body('Find_existing')?['value']), 0)",
-                                {"Stop_duplicate": terminate("Succeeded", "Duplicate", "이미 등록된 메일")},
-                                note="중복이면 성공으로 종료"),
-            "Title_text": {"type": "Compose", "note": "제목 없음 대비 + 접두어",
-                           "inputs": f"@{{concat('{prefix}', if(empty({t('subject')}), '(제목 없음)', {t('subject')}))}}"},
-            "Create_action": sp("Create item", "ActionItems", "액션 등록", item={
-                "Title": "@{if(greater(length(outputs('Title_text')), 250), substring(outputs('Title_text'), 0, 250), outputs('Title_text'))}",
-                "Owner/Claims": f"@{{{CFG}?['me']}}",
-                "Status/Value": "미착수", "ActionType/Value": action_type, "Source/Value": "이메일",
-                "CreatedVia/Value": "Outlook 플래그", "Priority/Value": "보통",
-                "SourceLink": f"@{{coalesce({t('webLink')}, '')}}",
-                "Evidence": f"@{{coalesce({t('bodyPreview')}, '')}}",
-                "SourceMessageId": f"@{{{t('id')}}}",
-                "DueDate": due}),
-        },
-        purpose=f"Outlook '{folder}' 폴더에서 플래그한 메일을 ActionItems({action_type})로 등록. 같은 메일 재플래그 시 중복 생성 없음.")
+        acts,
+        purpose=f"Outlook '{folder}' 폴더에서 플래그한 메일을 등록. 같은 메일 재플래그 시 중복 생성 없음.{extra}")
 
 
 def numbering_flow(fid, lst, id_col, prefix, extra_item, required):
@@ -157,7 +218,7 @@ def numbering_flow(fid, lst, id_col, prefix, extra_item, required):
 
 def build() -> list[dict]:
     flows = []
-    flows.append(flag_flow("P3P-F1", "Inbox", "실행", "[메일] ", None))
+    flows.append(flag_flow("P3P-F1", "Inbox", "실행", "[메일] ", None, route_decisions=True))
     flows.append(flag_flow("P3P-F2", "Sent Items", "회신대기", "[회신대기] ", 3))
 
     flows.append(numbering_flow(
@@ -254,10 +315,11 @@ def build() -> list[dict]:
             "If_skip": iff("@equals(body('Run_brief')?['result']?['skip'], true)",
                            {"Stop_skip": terminate("Succeeded", "Skip", "@{body('Run_brief')?['result']?['reason']}")},
                            note="주말·휴무일이면 게시 안 함"),
-            "Post_card": card_to_me("@{body('Run_brief')?['result']?['cardJson']}"),
+            "Post_card": card_to_me("@{body('Run_brief')?['result']?['cardJson']}", "@{body('Run_brief')?['result']?['htmlSummary']}",
+                                    "@{concat('[아침 브리핑] ', outputs('Today'))}"),
         },
         pre=pre_brief,
-        catch_extra={"If_teams_failed": iff("@equals(first(body('Failed_actions'))?['name'], 'Post_card')", {
+        catch_extra={"If_teams_failed": iff(f"@and(equals(first(body('Failed_actions'))?['name'], 'Post_card'), equals({CFG}?['channel'], 'teams'))", {
             "Email_fallback": {"type": "Connector", "connector": "Office 365 Outlook", "operation": "Send an email (V2)",
                                "inputs": {"to": f"@{{{CFG}?['me']}}", "subject": "[아침 브리핑] Teams 게시 실패 — 메일로 대체",
                                           "body": "@{body('Run_brief')?['result']?['htmlSummary']}"},
@@ -284,10 +346,9 @@ def build() -> list[dict]:
             "For_each_digest": {"type": "Foreach", "foreach": "@body('Run_digest')?['result']?['digests']",
                                 "note": "담당자별 반복(동시성 1)", "actions": chain({
                 "If_allowed": iff(f"@or(not({CFG}?['prototypeMode']), equals(toLower({dg}?['ownerEmail']), toLower({CFG}?['me'])))", {
-                    "Post_digest": {"type": "Connector", "connector": "Microsoft Teams", "operation": "Post card in a chat or channel",
-                                    "inputs": {"poster": "Flow bot", "location": "Chat with Flow bot",
-                                               "recipient": f"@{{{dg}?['ownerEmail']}}", "card": f"@{{{dg}?['cardJson']}}"},
-                                    "note": "담당자에게 카드"},
+                    "Post_digest": card_to_me(f"@{{{dg}?['cardJson']}}", f"@{{{dg}?['htmlSummary']}}",
+                                              "@{concat('[액션 리마인더] ', outputs('Today'))}",
+                                              recipient=f"@{{{dg}?['ownerEmail']}}", note="담당자에게 하루 1장"),
                     "For_each_item": {"type": "Foreach", "foreach": f"@{dg}?['itemIds']", "note": "알린 항목 기록", "actions": chain({
                         "Get_action": sp("Get item", "ActionItems", "현재 값 읽기(Update 필수 입력용)", id="@items('For_each_item')"),
                         "Mark_reminded": sp("Update item", "ActionItems", "리마인더 횟수·시각 기록", id="@items('For_each_item')", item={

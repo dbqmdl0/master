@@ -9,7 +9,8 @@
       "itemIds": [
         1
       ],
-      "cardJson": "{\"$schema\":\"http://adaptivecards.io/schemas/adaptive-card.json\",\"type\":\"AdaptiveCard\",\"version\":\"1.4\",\"body\":[{\"type\":\"TextBlock\",\"text\":\"액션 리마인더 · 2026-10-26\",\"weight\":\"Bolder\",\"size\":\"Medium\"},{\"type\":\"TextBlock\",\"wrap\":true,\"spacing\":\"Small\",\"text\":\"초과 1 · 오늘 0 · 내일 0\"},{\"type\":\"FactSet\",\"facts\":[{\"title\":\"3일 초과\",\"value\":\"ACT-2026-00001 [가상] 초과 건\"}]},{\"type\":\"TextBlock\",\"text\":\"완료했으면 상태를 '완료'로, 어려우면 기한을 조정하고 사유를 남겨 주세요.\",\"wrap\":true,\"isSubtle\":true,\"size\":\"Small\"}]}"
+      "cardJson": "{\"$schema\":\"http://adaptivecards.io/schemas/adaptive-card.json\",\"type\":\"AdaptiveCard\",\"version\":\"1.4\",\"body\":[{\"type\":\"TextBlock\",\"text\":\"액션 리마인더 · 2026-10-26\",\"weight\":\"Bolder\",\"size\":\"Medium\"},{\"type\":\"TextBlock\",\"wrap\":true,\"spacing\":\"Small\",\"text\":\"초과 1 · 오늘 0 · 내일 0\"},{\"type\":\"FactSet\",\"facts\":[{\"title\":\"3일 초과\",\"value\":\"ACT-2026-00001 [가상] 초과 건\"}]},{\"type\":\"TextBlock\",\"text\":\"완료했으면 상태를 '완료'로, 어려우면 기한을 조정하고 사유를 남겨 주세요.\",\"wrap\":true,\"isSubtle\":true,\"size\":\"Small\"}]}",
+      "htmlSummary": "<h3>액션 리마인더 2026-10-26</h3><ol><li><b>3일 초과</b> ACT-2026-00001 [가상] 초과 건</li></ol>"
     }
   ],
   "escalations": []

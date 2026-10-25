@@ -35,6 +35,7 @@
         "hostWorkbook": "{{HOST_WORKBOOK}}",
         "scriptFolder": "{{SCRIPT_FOLDER}}",
         "prototypeMode": true,
+        "channel": "{{NOTIFY_CHANNEL}}",
         "links": {
           "myActions": "{{VIEW_MY_ACTIONS}}",
           "decisionQueue": "{{VIEW_DECISION_QUEUE}}",
@@ -167,16 +168,40 @@
               "expression": "@or(not(outputs('Config')?['prototypeMode']), equals(toLower(items('For_each_digest')?['ownerEmail']), toLower(outputs('Config')?['me'])))",
               "actions": {
                 "Post_digest": {
-                  "type": "Connector",
-                  "connector": "Microsoft Teams",
-                  "operation": "Post card in a chat or channel",
-                  "inputs": {
-                    "poster": "Flow bot",
-                    "location": "Chat with Flow bot",
-                    "recipient": "@{items('For_each_digest')?['ownerEmail']}",
-                    "card": "@{items('For_each_digest')?['cardJson']}"
+                  "type": "If",
+                  "expression": "@equals(outputs('Config')?['channel'], 'teams')",
+                  "actions": {
+                    "Post_digest_teams": {
+                      "type": "Connector",
+                      "connector": "Microsoft Teams",
+                      "operation": "Post card in a chat or channel",
+                      "inputs": {
+                        "poster": "Flow bot",
+                        "location": "Chat with Flow bot",
+                        "recipient": "@{items('For_each_digest')?['ownerEmail']}",
+                        "card": "@{items('For_each_digest')?['cardJson']}"
+                      },
+                      "note": "Teams Flow bot 카드",
+                      "runAfter": {}
+                    }
                   },
-                  "note": "담당자에게 카드",
+                  "else": {
+                    "actions": {
+                      "Post_digest_email": {
+                        "type": "Connector",
+                        "connector": "Office 365 Outlook",
+                        "operation": "Send an email (V2)",
+                        "inputs": {
+                          "to": "@{items('For_each_digest')?['ownerEmail']}",
+                          "subject": "@{concat('[액션 리마인더] ', outputs('Today'))}",
+                          "body": "@{items('For_each_digest')?['htmlSummary']}"
+                        },
+                        "note": "메일 알림(Workflows 앱 없을 때)",
+                        "runAfter": {}
+                      }
+                    }
+                  },
+                  "note": "담당자에게 하루 1장 — 설정 channel 이 teams 면 Teams, 아니면 메일",
                   "runAfter": {}
                 },
                 "For_each_item": {
@@ -255,16 +280,40 @@
           "expression": "@greater(length(variables('varSkipped')), 0)",
           "actions": {
             "Tell_skipped": {
-              "type": "Connector",
-              "connector": "Microsoft Teams",
-              "operation": "Post message in a chat or channel",
-              "inputs": {
-                "poster": "Flow bot",
-                "location": "Chat with Flow bot",
-                "recipient": "@{outputs('Config')?['me']}",
-                "message": "@{concat('프로토타입 모드: 다른 담당자 ', string(length(variables('varSkipped'))), '명에게는 발송하지 않았습니다.')}"
+              "type": "If",
+              "expression": "@equals(outputs('Config')?['channel'], 'teams')",
+              "actions": {
+                "Tell_skipped_teams": {
+                  "type": "Connector",
+                  "connector": "Microsoft Teams",
+                  "operation": "Post message in a chat or channel",
+                  "inputs": {
+                    "poster": "Flow bot",
+                    "location": "Chat with Flow bot",
+                    "recipient": "@{outputs('Config')?['me']}",
+                    "message": "@{concat('프로토타입 모드: 다른 담당자 ', string(length(variables('varSkipped'))), '명에게는 발송하지 않았습니다.')}"
+                  },
+                  "note": "Teams Flow bot 메시지",
+                  "runAfter": {}
+                }
               },
-              "note": "본인에게 Flow bot 메시지",
+              "else": {
+                "actions": {
+                  "Tell_skipped_email": {
+                    "type": "Connector",
+                    "connector": "Office 365 Outlook",
+                    "operation": "Send an email (V2)",
+                    "inputs": {
+                      "to": "@{outputs('Config')?['me']}",
+                      "subject": "[P3 알림]",
+                      "body": "@{concat('프로토타입 모드: 다른 담당자 ', string(length(variables('varSkipped'))), '명에게는 발송하지 않았습니다.')}"
+                    },
+                    "note": "메일 알림(Workflows 앱 없을 때)",
+                    "runAfter": {}
+                  }
+                }
+              },
+              "note": "본인에게 알림(Teams 메시지 또는 메일) — 설정 channel 이 teams 면 Teams, 아니면 메일",
               "runAfter": {}
             }
           },

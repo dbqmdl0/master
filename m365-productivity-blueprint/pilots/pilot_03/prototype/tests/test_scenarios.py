@@ -144,7 +144,7 @@ class F_Failures(unittest.TestCase):
     def test_F01_persistent_500_retries_then_logged(self):
         e = Env()
         e.faults.add("SharePoint", "Create item", "ActionItems", [500] * 5)
-        r = e.flag_email("AAMk-3")[0]
+        r = e.flag_email("AAMk-3", folder="Sent Items")[0]
         self.assertEqual(r.status, "Failed")
         tries = [c for c in e.rt.connector_calls if c[1] == "Create_action"]
         self.assertEqual(len(tries), 5)  # 최초 1 + 재시도 4
@@ -257,7 +257,7 @@ class D_Duplicates(unittest.TestCase):
 class P_Permissions(unittest.TestCase):
     def test_P01_no_edit_permission_on_list(self):
         e = Env(acl_override={"ActionItems": {ME: "read"}})
-        r = e.flag_email("AAMk-8")[0]
+        r = e.flag_email("AAMk-8", folder="Sent Items")[0]
         self.assertEqual(r.status, "Failed")
         self.assertEqual(len([c for c in e.rt.connector_calls if c[1] == "Create_action"]), 1)  # 403은 재시도 안 함
         self.assertIn("권한 없음", e.errors()[0]["ErrorMessage"])

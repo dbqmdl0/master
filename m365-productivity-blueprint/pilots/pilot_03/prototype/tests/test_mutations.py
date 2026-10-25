@@ -40,10 +40,10 @@ class Mutations(unittest.TestCase):
             t.pop("Find_existing")
             t.pop("If_duplicate")
             t["Title_text"]["runAfter"] = {"Check_message_id": ["Succeeded"]}
-        paths, _ = mutated("P3P-F1", drop)
+        paths, _ = mutated("P3P-F2", drop)
         e = Env(flow_paths=paths)
-        e.flag_email("AAMk-y")
-        e.flag_email("AAMk-y")
+        e.flag_email("AAMk-y", folder="Sent Items")
+        e.flag_email("AAMk-y", folder="Sent Items")
         self.assertEqual(len(e.items("ActionItems")), 2)
 
     def test_removing_recheck_allows_double_registration(self):
@@ -66,7 +66,7 @@ class Mutations(unittest.TestCase):
         self.assertEqual(len(e.items("ActionItems")), 2)
 
     def test_lint_catches_broken_expression_missing_required_and_bad_choice(self):
-        d = json.loads((FLOWS / "P3P-F1.flow.json").read_text(encoding="utf-8"))
+        d = json.loads((FLOWS / "P3P-F2.flow.json").read_text(encoding="utf-8"))
         bad = copy.deepcopy(d)
         item = bad["actions"]["Try"]["actions"]["Create_action"]["inputs"]["item"]
         item["Title"] = "@{concat('a', outputs('Title_text')}"          # 괄호 누락
@@ -75,7 +75,7 @@ class Mutations(unittest.TestCase):
         item["SourceLink"] = "@{body('No_such_action')?['x']}"           # 없는 액션 참조
         errs = lint_flows.lint_flow(bad, lint_flows.schema())
         joined = "\n".join(errs)
-        for code in ("L1", "L5 P3P-F1.Create_action: 필수 열 입력 누락", "선택지 아님", "No_such_action"):
+        for code in ("L1", "L5 P3P-F2.Create_action: 필수 열 입력 누락", "선택지 아님", "No_such_action"):
             self.assertIn(code, joined)
 
     def test_lint_catches_script_param_mismatch_and_terminate_in_loop(self):

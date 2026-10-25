@@ -54,7 +54,7 @@
 | `SourceLink` | 원문 링크 | 한 줄 텍스트 |  |  |  |  |
 | `RelatedRequestID` | 관련 요청번호 | 한 줄 텍스트 |  |  | 예 |  |
 | `SupersededBy` | 대체한 결정번호 | 한 줄 텍스트 |  |  |  |  |
-| `CreatedVia` | 등록 경로 | 선택(Choice) |  | 수동, Teams 메시지, AI 제안 승인 / 기본값 `수동` |  |  |
+| `CreatedVia` | 등록 경로 | 선택(Choice) |  | 수동, Teams 메시지, Outlook 플래그, AI 제안 승인 / 기본값 `수동` |  |  |
 | `PrevStatus` | 이전 상태(시스템) | 한 줄 텍스트 |  |  |  | 예 |
 | `SourceMessageId` | 원본 메시지 ID(시스템) | 한 줄 텍스트 |  |  | 예 | 예 |
 

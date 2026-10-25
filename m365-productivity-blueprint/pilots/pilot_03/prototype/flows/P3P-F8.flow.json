@@ -22,6 +22,7 @@
         "hostWorkbook": "{{HOST_WORKBOOK}}",
         "scriptFolder": "{{SCRIPT_FOLDER}}",
         "prototypeMode": true,
+        "channel": "{{NOTIFY_CHANNEL}}",
         "links": {
           "myActions": "{{VIEW_MY_ACTIONS}}",
           "decisionQueue": "{{VIEW_DECISION_QUEUE}}",
@@ -185,16 +186,40 @@
               }
             },
             "Tell_candidates": {
-              "type": "Connector",
-              "connector": "Microsoft Teams",
-              "operation": "Post message in a chat or channel",
-              "inputs": {
-                "poster": "Flow bot",
-                "location": "Chat with Flow bot",
-                "recipient": "@{outputs('Config')?['me']}",
-                "message": "@{concat('회의 \"', triggerOutputs()?['body/Title'], '\" 후보 ', string(length(body('Run_guard')?['result']?['candidates'])), '건(추천 ', string(body('Run_guard')?['result']?['recommendedCount']), ') — 확인 후 승인하세요: ', outputs('Config')?['links']?['candidates'])}"
+              "type": "If",
+              "expression": "@equals(outputs('Config')?['channel'], 'teams')",
+              "actions": {
+                "Tell_candidates_teams": {
+                  "type": "Connector",
+                  "connector": "Microsoft Teams",
+                  "operation": "Post message in a chat or channel",
+                  "inputs": {
+                    "poster": "Flow bot",
+                    "location": "Chat with Flow bot",
+                    "recipient": "@{outputs('Config')?['me']}",
+                    "message": "@{concat('회의 \"', triggerOutputs()?['body/Title'], '\" 후보 ', string(length(body('Run_guard')?['result']?['candidates'])), '건(추천 ', string(body('Run_guard')?['result']?['recommendedCount']), ') — 확인 후 승인하세요: ', outputs('Config')?['links']?['candidates'])}"
+                  },
+                  "note": "Teams Flow bot 메시지",
+                  "runAfter": {}
+                }
               },
-              "note": "본인에게 Flow bot 메시지",
+              "else": {
+                "actions": {
+                  "Tell_candidates_email": {
+                    "type": "Connector",
+                    "connector": "Office 365 Outlook",
+                    "operation": "Send an email (V2)",
+                    "inputs": {
+                      "to": "@{outputs('Config')?['me']}",
+                      "subject": "[P3 알림]",
+                      "body": "@{concat('회의 \"', triggerOutputs()?['body/Title'], '\" 후보 ', string(length(body('Run_guard')?['result']?['candidates'])), '건(추천 ', string(body('Run_guard')?['result']?['recommendedCount']), ') — 확인 후 승인하세요: ', outputs('Config')?['links']?['candidates'])}"
+                    },
+                    "note": "메일 알림(Workflows 앱 없을 때)",
+                    "runAfter": {}
+                  }
+                }
+              },
+              "note": "본인에게 알림(Teams 메시지 또는 메일) — 설정 channel 이 teams 면 Teams, 아니면 메일",
               "runAfter": {
                 "Mark_intake_done": [
                   "Succeeded"
@@ -227,16 +252,40 @@
                 "runAfter": {}
               },
               "Tell_parse_error": {
-                "type": "Connector",
-                "connector": "Microsoft Teams",
-                "operation": "Post message in a chat or channel",
-                "inputs": {
-                  "poster": "Flow bot",
-                  "location": "Chat with Flow bot",
-                  "recipient": "@{outputs('Config')?['me']}",
-                  "message": "@{concat('회의 \"', triggerOutputs()?['body/Title'], '\" 추출 결과를 읽지 못했습니다: ', body('Run_guard')?['result']?['parseError'])}"
+                "type": "If",
+                "expression": "@equals(outputs('Config')?['channel'], 'teams')",
+                "actions": {
+                  "Tell_parse_error_teams": {
+                    "type": "Connector",
+                    "connector": "Microsoft Teams",
+                    "operation": "Post message in a chat or channel",
+                    "inputs": {
+                      "poster": "Flow bot",
+                      "location": "Chat with Flow bot",
+                      "recipient": "@{outputs('Config')?['me']}",
+                      "message": "@{concat('회의 \"', triggerOutputs()?['body/Title'], '\" 추출 결과를 읽지 못했습니다: ', body('Run_guard')?['result']?['parseError'])}"
+                    },
+                    "note": "Teams Flow bot 메시지",
+                    "runAfter": {}
+                  }
                 },
-                "note": "본인에게 Flow bot 메시지",
+                "else": {
+                  "actions": {
+                    "Tell_parse_error_email": {
+                      "type": "Connector",
+                      "connector": "Office 365 Outlook",
+                      "operation": "Send an email (V2)",
+                      "inputs": {
+                        "to": "@{outputs('Config')?['me']}",
+                        "subject": "[P3 알림]",
+                        "body": "@{concat('회의 \"', triggerOutputs()?['body/Title'], '\" 추출 결과를 읽지 못했습니다: ', body('Run_guard')?['result']?['parseError'])}"
+                      },
+                      "note": "메일 알림(Workflows 앱 없을 때)",
+                      "runAfter": {}
+                    }
+                  }
+                },
+                "note": "본인에게 알림(Teams 메시지 또는 메일) — 설정 channel 이 teams 면 Teams, 아니면 메일",
                 "runAfter": {
                   "Mark_intake_error": [
                     "Succeeded"

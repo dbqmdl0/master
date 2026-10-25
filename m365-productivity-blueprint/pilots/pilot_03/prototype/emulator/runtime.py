@@ -22,6 +22,8 @@ from wdl import Context, ExprError, evaluate
 
 RETRYABLE = {408, 429, 500, 502, 503, 504}
 MAX_RUNS_PER_DRAIN = 200
+# 실제 엔진처럼, 안쪽 액션이 실패한 조건·범위·반복은 상세 대신 일반 메시지를 남긴다(상세는 실행 기록 링크로 확인)
+ACTION_FAILED = {"code": "ActionFailed", "message": "An action failed. No dependent actions succeeded."}
 
 
 class Terminate(Exception):
@@ -221,12 +223,12 @@ class Runtime:
                     raise ExprError(f"조건 식 결과가 논리값이 아님: {cond!r}")
                 branch = a.get("actions", {}) if cond else a.get("else", {}).get("actions", {})
                 st = self._run_scope(branch, ctx)
-                return self._record(ctx, name, st)
+                return self._record(ctx, name, st, error=ACTION_FAILED if st == "Failed" else None)
             if t == "Scope":
                 st = self._run_scope(a["actions"], ctx)
                 ctx.scope_results[name] = [{"name": n, "status": ctx.actions.get(n, {}).get("status"),
                                             "error": ctx.actions.get(n, {}).get("error")} for n in a["actions"]]
-                return self._record(ctx, name, st)
+                return self._record(ctx, name, st, error=ACTION_FAILED if st == "Failed" else None)
             if t == "Foreach":
                 arr = evaluate(a["foreach"], ctx)
                 if not isinstance(arr, list):
@@ -241,7 +243,7 @@ class Runtime:
                     finally:
                         ctx.current_item.pop()
                 ctx.loop_items.pop(name, None)
-                return self._record(ctx, name, worst)
+                return self._record(ctx, name, worst, error=ACTION_FAILED if worst == "Failed" else None)
             if t in ("FilterArray", "Select"):
                 arr = evaluate(a["inputs"]["from"], ctx)
                 if not isinstance(arr, list):

@@ -35,6 +35,7 @@
         "hostWorkbook": "{{HOST_WORKBOOK}}",
         "scriptFolder": "{{SCRIPT_FOLDER}}",
         "prototypeMode": true,
+        "channel": "{{NOTIFY_CHANNEL}}",
         "links": {
           "myActions": "{{VIEW_MY_ACTIONS}}",
           "decisionQueue": "{{VIEW_DECISION_QUEUE}}",
@@ -182,16 +183,40 @@
           }
         },
         "Post_card": {
-          "type": "Connector",
-          "connector": "Microsoft Teams",
-          "operation": "Post card in a chat or channel",
-          "inputs": {
-            "poster": "Flow bot",
-            "location": "Chat with Flow bot",
-            "recipient": "@{outputs('Config')?['me']}",
-            "card": "@{body('Run_brief')?['result']?['cardJson']}"
+          "type": "If",
+          "expression": "@equals(outputs('Config')?['channel'], 'teams')",
+          "actions": {
+            "Post_card_teams": {
+              "type": "Connector",
+              "connector": "Microsoft Teams",
+              "operation": "Post card in a chat or channel",
+              "inputs": {
+                "poster": "Flow bot",
+                "location": "Chat with Flow bot",
+                "recipient": "@{outputs('Config')?['me']}",
+                "card": "@{body('Run_brief')?['result']?['cardJson']}"
+              },
+              "note": "Teams Flow bot 카드",
+              "runAfter": {}
+            }
           },
-          "note": "본인에게 Flow bot 채팅으로 카드 게시",
+          "else": {
+            "actions": {
+              "Post_card_email": {
+                "type": "Connector",
+                "connector": "Office 365 Outlook",
+                "operation": "Send an email (V2)",
+                "inputs": {
+                  "to": "@{outputs('Config')?['me']}",
+                  "subject": "@{concat('[아침 브리핑] ', outputs('Today'))}",
+                  "body": "@{body('Run_brief')?['result']?['htmlSummary']}"
+                },
+                "note": "메일 알림(Workflows 앱 없을 때)",
+                "runAfter": {}
+              }
+            }
+          },
+          "note": "본인에게 알림(카드 또는 메일) — 설정 channel 이 teams 면 Teams, 아니면 메일",
           "runAfter": {
             "If_skip": [
               "Succeeded"
@@ -244,7 +269,7 @@
         },
         "If_teams_failed": {
           "type": "If",
-          "expression": "@equals(first(body('Failed_actions'))?['name'], 'Post_card')",
+          "expression": "@and(equals(first(body('Failed_actions'))?['name'], 'Post_card'), equals(outputs('Config')?['channel'], 'teams'))",
           "actions": {
             "Email_fallback": {
               "type": "Connector",

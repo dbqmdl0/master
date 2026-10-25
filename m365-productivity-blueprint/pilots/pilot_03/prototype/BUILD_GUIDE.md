@@ -13,7 +13,7 @@
 |---|---|---|---|---|
 | C1 | Power Automate 접속·환경 | make.powerautomate.com → 오른쪽 위 **환경(Environment)** 표시 확인 | 이름에 '(default)' 또는 회사 기본 환경 | Teams 메시지 흐름(F5)은 기본 환경에서만 메시지 메뉴에 보인다는 보고 → 기본 환경 사용 |
 | C2 | DLP | **+ 만들기(Create) › 인스턴트 클라우드 흐름** → 이름 `DLP점검` → 수동 트리거 → 액션 5개 추가(SharePoint Get items, Office 365 Outlook Send an email (V2), Microsoft Teams Post message, Excel Online (Business) Run script, Office 365 Users Get user profile) → **저장만**(실행 안 함) | 저장 시 DLP 경고 없음 | 경고 문구를 캡처해 IT 요청(APPROVALS I-01). 확인 후 이 흐름은 삭제 |
-| C3 | Teams Workflows 앱 | Teams → **앱(Apps)** → `Workflows` 검색 | '추가' 또는 '열기' 가능 | 아침 브리핑은 본인 메일로 자동 대체됨(테스트 F03), IT 요청 I-02 |
+| C3 | Teams Workflows 앱 | Teams → **앱(Apps)** → `Workflows`(옛 이름 `Power Automate`) 검색 | '추가' 또는 '열기' 가능 | **점검 결과 없음** → `{{NOTIFY_CHANNEL}}=email`. 모든 알림 메일로, P3P-F5 대신 Outlook 범주 방식(START_HERE 6단계). IT 요청 I-02는 선택 |
 | C4 | Office Scripts | 웹 Excel(office.com에서 아무 통합 문서) → 리본 **자동화(Automate)** 탭 | 탭 있음 | IT 요청 I-03(관리자가 끔) |
 | C5 | Copilot | Teams 회의 채팅 또는 microsoft365.com의 **Copilot** → **업무(Work)** 탭 | 응답 가능 | 라이선스 할당 확인 |
 | C6 | 에이전트 만들기 | Copilot 앱 왼쪽 **에이전트(Agents)** | '에이전트 만들기' 보임 | 결정 조회 에이전트만 보류(I-05), 나머지 진행 |
@@ -31,6 +31,7 @@
 | `{{VIEW_MY_ACTIONS}}` | ActionItems '내 액션' 보기 URL | 보기 선택 후 주소창 복사 |
 | `{{VIEW_DECISION_QUEUE}}` | DecisionLog '결정 대기열' 보기 URL | 〃 |
 | `{{VIEW_CANDIDATES}}` | ActionCandidates '확인 대기' 보기 URL | 〃 |
+| `{{NOTIFY_CHANNEL}}` | **`email`** (2026-10-26 점검: Workflows 앱 없음) | Workflows 앱이 허용되면 `teams` |
 
 `prototypeMode: true` — 리마인더를 본인에게만 보낸다. **운영 전환 승인(APPROVALS U-04) 전까지 false로 바꾸지 않는다.**
 
@@ -111,7 +112,7 @@ CSV에서 텍스트로 들어왔다면: 그 열 삭제 → **+ 열 추가(Add co
 | 2 | P3P-F4 DecisionLog 번호·상태 | 〃 | 〃 |
 | 3 | P3P-F1 메일 플래그(받은편지함) | 자동화(Outlook 플래그 V4, 폴더 Inbox) | 트리거 **동시성 1** |
 | 4 | P3P-F2 메일 플래그(보낸편지함) | F1을 **다른 이름으로 저장(Save As)** 후 폴더 Sent Items, 유형 회신대기, 접두어·기본 기한만 변경 | 〃 |
-| 5 | P3P-F5 Teams 메시지 기록 | 인스턴트(Teams **For a selected message**) | 트리거의 Adaptive Card 칸에 `../automation_assets/cards/capture_decision_action.json` 붙여넣기 |
+| 5 | ~~P3P-F5 Teams 메시지 기록~~ **(Workflows 앱 없음 → 건너뜀, F1의 범주 방식으로 대체)** | 인스턴트(Teams **For a selected message**) | 트리거의 Adaptive Card 칸에 `../automation_assets/cards/capture_decision_action.json` 붙여넣기 |
 | 6 | P3P-F6 아침 브리핑 | 예약(평일 07:40, Seoul) | `Catch` 안의 `If_teams_failed` → 본인 메일 대체 |
 | 7 | P3P-F7 리마인더 | 예약(평일 08:30, Seoul) | 최상위 `Init_skipped` 변수 초기화는 **Try 밖(위)** 에. `For_each_digest` 동시성 1 |
 | 8 | P3P-F8 Copilot 추출 검증 | 자동화(MeetingIntake 생성·수정) | 트리거 조건(접수·재검증요청일 때만) |

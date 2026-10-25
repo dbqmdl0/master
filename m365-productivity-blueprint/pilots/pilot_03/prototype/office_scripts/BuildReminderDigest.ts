@@ -13,6 +13,7 @@ interface Digest {
   itemCount: number;
   itemIds: number[];
   cardJson: string;
+  htmlSummary: string; // 메일 알림 본문(Teams Workflows 앱이 없을 때)
 }
 
 interface Escalation {
@@ -72,6 +73,10 @@ function kstDate(v: unknown): string {
   return isNaN(t) ? "" : new Date(t + KST_OFFSET_MS).toISOString().substring(0, 10);
 }
 
+function esc(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
 function dayDiff(a: string, b: string): number {
   return Math.round((Date.parse(b + "T00:00:00Z") - Date.parse(a + "T00:00:00Z")) / 86400000);
 }
@@ -115,7 +120,12 @@ function buildDigests(today: string, actions: Raw[], holidays: Raw[], viewUrl: s
     body.push({ type: "TextBlock", text: "완료했으면 상태를 '완료'로, 어려우면 기한을 조정하고 사유를 남겨 주세요.", wrap: true, isSubtle: true, size: "Small" });
     const card: Raw = { $schema: "http://adaptivecards.io/schemas/adaptive-card.json", type: "AdaptiveCard", version: "1.4", body };
     if (viewUrl) card["actions"] = [{ type: "Action.OpenUrl", title: "내 액션 열기", url: viewUrl }];
-    res.digests.push({ ownerEmail: owner, itemCount: list.length, itemIds: list.map(x => x.id), cardJson: JSON.stringify(card) });
+    const li = list.slice(0, MAX_LINES).map(x => `<li><b>${esc(label(x.late))}</b> ${esc(x.aid)} ${esc(x.title)}</li>`).join("");
+    const html = `<h3>액션 리마인더 ${esc(today)}</h3><ol>${li}</ol>` +
+      (list.length > MAX_LINES ? `<p>외 ${list.length - MAX_LINES}건</p>` : "") +
+      (viewUrl ? `<p><a href="${esc(viewUrl)}">내 액션 열기</a></p>` : "");
+    res.digests.push({ ownerEmail: owner, itemCount: list.length, itemIds: list.map(x => x.id), cardJson: JSON.stringify(card),
+      htmlSummary: html });
   });
   res.digestCount = res.digests.length;
   res.escalations.sort((x, y) => x.itemId - y.itemId);

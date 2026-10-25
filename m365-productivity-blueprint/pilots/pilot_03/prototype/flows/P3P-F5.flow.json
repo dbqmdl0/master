@@ -18,6 +18,7 @@
         "hostWorkbook": "{{HOST_WORKBOOK}}",
         "scriptFolder": "{{SCRIPT_FOLDER}}",
         "prototypeMode": true,
+        "channel": "{{NOTIFY_CHANNEL}}",
         "links": {
           "myActions": "{{VIEW_MY_ACTIONS}}",
           "decisionQueue": "{{VIEW_DECISION_QUEUE}}",
@@ -63,16 +64,40 @@
           "expression": "@or(empty(outputs('Inputs')?['title']), empty(outputs('Inputs')?['messageId']))",
           "actions": {
             "Tell_missing": {
-              "type": "Connector",
-              "connector": "Microsoft Teams",
-              "operation": "Post message in a chat or channel",
-              "inputs": {
-                "poster": "Flow bot",
-                "location": "Chat with Flow bot",
-                "recipient": "@{outputs('Config')?['me']}",
-                "message": "기록하지 않았습니다: 제목 또는 메시지 정보가 비어 있습니다."
+              "type": "If",
+              "expression": "@equals(outputs('Config')?['channel'], 'teams')",
+              "actions": {
+                "Tell_missing_teams": {
+                  "type": "Connector",
+                  "connector": "Microsoft Teams",
+                  "operation": "Post message in a chat or channel",
+                  "inputs": {
+                    "poster": "Flow bot",
+                    "location": "Chat with Flow bot",
+                    "recipient": "@{outputs('Config')?['me']}",
+                    "message": "기록하지 않았습니다: 제목 또는 메시지 정보가 비어 있습니다."
+                  },
+                  "note": "Teams Flow bot 메시지",
+                  "runAfter": {}
+                }
               },
-              "note": "본인에게 Flow bot 메시지",
+              "else": {
+                "actions": {
+                  "Tell_missing_email": {
+                    "type": "Connector",
+                    "connector": "Office 365 Outlook",
+                    "operation": "Send an email (V2)",
+                    "inputs": {
+                      "to": "@{outputs('Config')?['me']}",
+                      "subject": "[P3 알림]",
+                      "body": "기록하지 않았습니다: 제목 또는 메시지 정보가 비어 있습니다."
+                    },
+                    "note": "메일 알림(Workflows 앱 없을 때)",
+                    "runAfter": {}
+                  }
+                }
+              },
+              "note": "본인에게 알림(Teams 메시지 또는 메일) — 설정 channel 이 teams 면 Teams, 아니면 메일",
               "runAfter": {}
             },
             "Stop_missing": {
@@ -134,16 +159,40 @@
               "expression": "@greater(length(body('Find_dup_action')?['value']), 0)",
               "actions": {
                 "Tell_dup_action": {
-                  "type": "Connector",
-                  "connector": "Microsoft Teams",
-                  "operation": "Post message in a chat or channel",
-                  "inputs": {
-                    "poster": "Flow bot",
-                    "location": "Chat with Flow bot",
-                    "recipient": "@{outputs('Config')?['me']}",
-                    "message": "이미 기록된 메시지입니다(중복 생성 안 함)."
+                  "type": "If",
+                  "expression": "@equals(outputs('Config')?['channel'], 'teams')",
+                  "actions": {
+                    "Tell_dup_action_teams": {
+                      "type": "Connector",
+                      "connector": "Microsoft Teams",
+                      "operation": "Post message in a chat or channel",
+                      "inputs": {
+                        "poster": "Flow bot",
+                        "location": "Chat with Flow bot",
+                        "recipient": "@{outputs('Config')?['me']}",
+                        "message": "이미 기록된 메시지입니다(중복 생성 안 함)."
+                      },
+                      "note": "Teams Flow bot 메시지",
+                      "runAfter": {}
+                    }
                   },
-                  "note": "본인에게 Flow bot 메시지",
+                  "else": {
+                    "actions": {
+                      "Tell_dup_action_email": {
+                        "type": "Connector",
+                        "connector": "Office 365 Outlook",
+                        "operation": "Send an email (V2)",
+                        "inputs": {
+                          "to": "@{outputs('Config')?['me']}",
+                          "subject": "[P3 알림]",
+                          "body": "이미 기록된 메시지입니다(중복 생성 안 함)."
+                        },
+                        "note": "메일 알림(Workflows 앱 없을 때)",
+                        "runAfter": {}
+                      }
+                    }
+                  },
+                  "note": "본인에게 알림(Teams 메시지 또는 메일) — 설정 channel 이 teams 면 Teams, 아니면 메일",
                   "runAfter": {}
                 },
                 "Stop_dup_action": {
@@ -220,16 +269,40 @@
                 "expression": "@greater(length(body('Find_dup_decision')?['value']), 0)",
                 "actions": {
                   "Tell_dup_decision": {
-                    "type": "Connector",
-                    "connector": "Microsoft Teams",
-                    "operation": "Post message in a chat or channel",
-                    "inputs": {
-                      "poster": "Flow bot",
-                      "location": "Chat with Flow bot",
-                      "recipient": "@{outputs('Config')?['me']}",
-                      "message": "이미 기록된 메시지입니다(중복 생성 안 함)."
+                    "type": "If",
+                    "expression": "@equals(outputs('Config')?['channel'], 'teams')",
+                    "actions": {
+                      "Tell_dup_decision_teams": {
+                        "type": "Connector",
+                        "connector": "Microsoft Teams",
+                        "operation": "Post message in a chat or channel",
+                        "inputs": {
+                          "poster": "Flow bot",
+                          "location": "Chat with Flow bot",
+                          "recipient": "@{outputs('Config')?['me']}",
+                          "message": "이미 기록된 메시지입니다(중복 생성 안 함)."
+                        },
+                        "note": "Teams Flow bot 메시지",
+                        "runAfter": {}
+                      }
                     },
-                    "note": "본인에게 Flow bot 메시지",
+                    "else": {
+                      "actions": {
+                        "Tell_dup_decision_email": {
+                          "type": "Connector",
+                          "connector": "Office 365 Outlook",
+                          "operation": "Send an email (V2)",
+                          "inputs": {
+                            "to": "@{outputs('Config')?['me']}",
+                            "subject": "[P3 알림]",
+                            "body": "이미 기록된 메시지입니다(중복 생성 안 함)."
+                          },
+                          "note": "메일 알림(Workflows 앱 없을 때)",
+                          "runAfter": {}
+                        }
+                      }
+                    },
+                    "note": "본인에게 알림(Teams 메시지 또는 메일) — 설정 channel 이 teams 면 Teams, 아니면 메일",
                     "runAfter": {}
                   },
                   "Stop_dup_decision": {
@@ -289,16 +362,40 @@
           }
         },
         "Tell_done": {
-          "type": "Connector",
-          "connector": "Microsoft Teams",
-          "operation": "Post message in a chat or channel",
-          "inputs": {
-            "poster": "Flow bot",
-            "location": "Chat with Flow bot",
-            "recipient": "@{outputs('Config')?['me']}",
-            "message": "@{concat('기록됨(', outputs('Inputs')?['kind'], '): ', outputs('Inputs')?['title'], ' — 번호는 잠시 후 목록에서 확인')}"
+          "type": "If",
+          "expression": "@equals(outputs('Config')?['channel'], 'teams')",
+          "actions": {
+            "Tell_done_teams": {
+              "type": "Connector",
+              "connector": "Microsoft Teams",
+              "operation": "Post message in a chat or channel",
+              "inputs": {
+                "poster": "Flow bot",
+                "location": "Chat with Flow bot",
+                "recipient": "@{outputs('Config')?['me']}",
+                "message": "@{concat('기록됨(', outputs('Inputs')?['kind'], '): ', outputs('Inputs')?['title'], ' — 번호는 잠시 후 목록에서 확인')}"
+              },
+              "note": "Teams Flow bot 메시지",
+              "runAfter": {}
+            }
           },
-          "note": "본인에게 Flow bot 메시지",
+          "else": {
+            "actions": {
+              "Tell_done_email": {
+                "type": "Connector",
+                "connector": "Office 365 Outlook",
+                "operation": "Send an email (V2)",
+                "inputs": {
+                  "to": "@{outputs('Config')?['me']}",
+                  "subject": "[P3 알림]",
+                  "body": "@{concat('기록됨(', outputs('Inputs')?['kind'], '): ', outputs('Inputs')?['title'], ' — 번호는 잠시 후 목록에서 확인')}"
+                },
+                "note": "메일 알림(Workflows 앱 없을 때)",
+                "runAfter": {}
+              }
+            }
+          },
+          "note": "본인에게 알림(Teams 메시지 또는 메일) — 설정 channel 이 teams 면 Teams, 아니면 메일",
           "runAfter": {
             "If_action": [
               "Succeeded"
