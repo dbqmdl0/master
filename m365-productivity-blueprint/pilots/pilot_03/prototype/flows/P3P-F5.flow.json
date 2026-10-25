@@ -1,0 +1,373 @@
+{
+  "id": "P3P-F5",
+  "name": "P3P-F5 Teams 메시지 → 결정·액션 기록",
+  "purpose": "Teams 메시지 '추가 작업'에서 결정·결정요청·액션을 기록. 같은 메시지 두 번 기록 방지, 담당자 실존 확인.",
+  "trigger": {
+    "kind": "Teams.ForASelectedMessage",
+    "inputs": {
+      "inputCard": "../automation_assets/cards/capture_decision_action.json"
+    }
+  },
+  "actions": {
+    "Config": {
+      "type": "Compose",
+      "note": "설정값 모음. 샌드박스→운영 전환 시 이 값만 바꾼다(트리거의 사이트·목록은 직접 다시 선택).",
+      "inputs": {
+        "site": "{{SITE_URL}}",
+        "me": "{{ME}}",
+        "hostWorkbook": "{{HOST_WORKBOOK}}",
+        "scriptFolder": "{{SCRIPT_FOLDER}}",
+        "prototypeMode": true,
+        "links": {
+          "myActions": "{{VIEW_MY_ACTIONS}}",
+          "decisionQueue": "{{VIEW_DECISION_QUEUE}}",
+          "candidates": "{{VIEW_CANDIDATES}}"
+        }
+      },
+      "runAfter": {}
+    },
+    "Try": {
+      "type": "Scope",
+      "runAfter": {
+        "Config": [
+          "Succeeded"
+        ]
+      },
+      "actions": {
+        "Content": {
+          "type": "Compose",
+          "note": "메시지 본문 앞 1,000자(근거로 저장)",
+          "inputs": "@{if(greater(length(coalesce(triggerBody()?['messagePayload']?['body']?['content'], '')), 1000), substring(triggerBody()?['messagePayload']?['body']?['content'], 0, 1000), coalesce(triggerBody()?['messagePayload']?['body']?['content'], ''))}",
+          "runAfter": {}
+        },
+        "Inputs": {
+          "type": "Compose",
+          "note": "카드 입력값 정리(담당자 비면 나)",
+          "inputs": {
+            "kind": "@{coalesce(triggerBody()?['cardOutputs']?['kind'], '액션')}",
+            "title": "@{trim(coalesce(triggerBody()?['cardOutputs']?['title'], ''))}",
+            "owner": "@{toLower(if(empty(triggerBody()?['cardOutputs']?['ownerEmail']), outputs('Config')?['me'], trim(triggerBody()?['cardOutputs']?['ownerEmail'])))}",
+            "due": "@{coalesce(triggerBody()?['cardOutputs']?['dueDate'], '')}",
+            "decisionId": "@{trim(coalesce(triggerBody()?['cardOutputs']?['decisionId'], ''))}",
+            "messageId": "@{coalesce(triggerBody()?['messagePayload']?['id'], '')}",
+            "link": "@{coalesce(triggerBody()?['linkToMessage'], '')}"
+          },
+          "runAfter": {
+            "Content": [
+              "Succeeded"
+            ]
+          }
+        },
+        "Validate_inputs": {
+          "type": "If",
+          "expression": "@or(empty(outputs('Inputs')?['title']), empty(outputs('Inputs')?['messageId']))",
+          "actions": {
+            "Tell_missing": {
+              "type": "Connector",
+              "connector": "Microsoft Teams",
+              "operation": "Post message in a chat or channel",
+              "inputs": {
+                "poster": "Flow bot",
+                "location": "Chat with Flow bot",
+                "recipient": "@{outputs('Config')?['me']}",
+                "message": "기록하지 않았습니다: 제목 또는 메시지 정보가 비어 있습니다."
+              },
+              "note": "본인에게 Flow bot 메시지",
+              "runAfter": {}
+            },
+            "Stop_missing": {
+              "type": "Terminate",
+              "inputs": {
+                "runStatus": "Failed",
+                "runError": {
+                  "code": "InputMissing",
+                  "message": "제목 또는 메시지 ID 누락"
+                }
+              },
+              "runAfter": {
+                "Tell_missing": [
+                  "Succeeded"
+                ]
+              }
+            }
+          },
+          "note": "데이터 누락 방어",
+          "runAfter": {
+            "Inputs": [
+              "Succeeded"
+            ]
+          }
+        },
+        "Check_owner": {
+          "type": "Connector",
+          "connector": "Office 365 Users",
+          "operation": "Get user profile (V2)",
+          "inputs": {
+            "user": "@{outputs('Inputs')?['owner']}"
+          },
+          "note": "담당자 이메일이 실제 사용자인지 확인",
+          "runAfter": {
+            "Validate_inputs": [
+              "Succeeded"
+            ]
+          }
+        },
+        "If_action": {
+          "type": "If",
+          "expression": "@equals(outputs('Inputs')?['kind'], '액션')",
+          "actions": {
+            "Find_dup_action": {
+              "type": "Connector",
+              "connector": "SharePoint",
+              "operation": "Get items",
+              "inputs": {
+                "site": "@{outputs('Config')?['site']}",
+                "list": "ActionItems",
+                "filter": "SourceMessageId eq '@{replace(outputs('Inputs')?['messageId'], '''', '''''')}'",
+                "top": 1
+              },
+              "note": "같은 메시지 중복 확인",
+              "runAfter": {}
+            },
+            "If_dup_action": {
+              "type": "If",
+              "expression": "@greater(length(body('Find_dup_action')?['value']), 0)",
+              "actions": {
+                "Tell_dup_action": {
+                  "type": "Connector",
+                  "connector": "Microsoft Teams",
+                  "operation": "Post message in a chat or channel",
+                  "inputs": {
+                    "poster": "Flow bot",
+                    "location": "Chat with Flow bot",
+                    "recipient": "@{outputs('Config')?['me']}",
+                    "message": "이미 기록된 메시지입니다(중복 생성 안 함)."
+                  },
+                  "note": "본인에게 Flow bot 메시지",
+                  "runAfter": {}
+                },
+                "Stop_dup_action": {
+                  "type": "Terminate",
+                  "inputs": {
+                    "runStatus": "Succeeded",
+                    "runError": {
+                      "code": "Duplicate",
+                      "message": "이미 기록됨"
+                    }
+                  },
+                  "runAfter": {
+                    "Tell_dup_action": [
+                      "Succeeded"
+                    ]
+                  }
+                }
+              },
+              "note": "",
+              "runAfter": {
+                "Find_dup_action": [
+                  "Succeeded"
+                ]
+              }
+            },
+            "Create_action": {
+              "type": "Connector",
+              "connector": "SharePoint",
+              "operation": "Create item",
+              "inputs": {
+                "site": "@{outputs('Config')?['site']}",
+                "list": "ActionItems",
+                "item": {
+                  "Title": "@{outputs('Inputs')?['title']}",
+                  "Owner/Claims": "@{outputs('Inputs')?['owner']}",
+                  "DueDate": "@if(empty(outputs('Inputs')?['due']), null, outputs('Inputs')?['due'])",
+                  "Status/Value": "미착수",
+                  "ActionType/Value": "실행",
+                  "Source/Value": "Teams 메시지",
+                  "CreatedVia/Value": "Teams 메시지",
+                  "Priority/Value": "보통",
+                  "SourceLink": "@{outputs('Inputs')?['link']}",
+                  "Evidence": "@{outputs('Content')}",
+                  "DecisionID": "@{outputs('Inputs')?['decisionId']}",
+                  "SourceMessageId": "@{outputs('Inputs')?['messageId']}"
+                }
+              },
+              "note": "액션 등록",
+              "runAfter": {
+                "If_dup_action": [
+                  "Succeeded"
+                ]
+              }
+            }
+          },
+          "note": "종류별 분기: 액션 / 결정·결정요청",
+          "else": {
+            "actions": {
+              "Find_dup_decision": {
+                "type": "Connector",
+                "connector": "SharePoint",
+                "operation": "Get items",
+                "inputs": {
+                  "site": "@{outputs('Config')?['site']}",
+                  "list": "DecisionLog",
+                  "filter": "SourceMessageId eq '@{replace(outputs('Inputs')?['messageId'], '''', '''''')}'",
+                  "top": 1
+                },
+                "note": "같은 메시지 중복 확인",
+                "runAfter": {}
+              },
+              "If_dup_decision": {
+                "type": "If",
+                "expression": "@greater(length(body('Find_dup_decision')?['value']), 0)",
+                "actions": {
+                  "Tell_dup_decision": {
+                    "type": "Connector",
+                    "connector": "Microsoft Teams",
+                    "operation": "Post message in a chat or channel",
+                    "inputs": {
+                      "poster": "Flow bot",
+                      "location": "Chat with Flow bot",
+                      "recipient": "@{outputs('Config')?['me']}",
+                      "message": "이미 기록된 메시지입니다(중복 생성 안 함)."
+                    },
+                    "note": "본인에게 Flow bot 메시지",
+                    "runAfter": {}
+                  },
+                  "Stop_dup_decision": {
+                    "type": "Terminate",
+                    "inputs": {
+                      "runStatus": "Succeeded",
+                      "runError": {
+                        "code": "Duplicate",
+                        "message": "이미 기록됨"
+                      }
+                    },
+                    "runAfter": {
+                      "Tell_dup_decision": [
+                        "Succeeded"
+                      ]
+                    }
+                  }
+                },
+                "note": "",
+                "runAfter": {
+                  "Find_dup_decision": [
+                    "Succeeded"
+                  ]
+                }
+              },
+              "Create_decision": {
+                "type": "Connector",
+                "connector": "SharePoint",
+                "operation": "Create item",
+                "inputs": {
+                  "site": "@{outputs('Config')?['site']}",
+                  "list": "DecisionLog",
+                  "item": {
+                    "Title": "@{outputs('Inputs')?['title']}",
+                    "DecisionText": "@{concat(outputs('Inputs')?['title'], ' / 원문: ', outputs('Content'))}",
+                    "Status/Value": "@{if(equals(outputs('Inputs')?['kind'], '결정요청'), '결정요청', '확정')}",
+                    "Decider/Claims": "@{outputs('Inputs')?['owner']}",
+                    "RequestedBy/Claims": "@{outputs('Config')?['me']}",
+                    "SourceLink": "@{outputs('Inputs')?['link']}",
+                    "CreatedVia/Value": "Teams 메시지",
+                    "SourceMessageId": "@{outputs('Inputs')?['messageId']}"
+                  }
+                },
+                "note": "결정 또는 결정요청 등록",
+                "runAfter": {
+                  "If_dup_decision": [
+                    "Succeeded"
+                  ]
+                }
+              }
+            }
+          },
+          "runAfter": {
+            "Check_owner": [
+              "Succeeded"
+            ]
+          }
+        },
+        "Tell_done": {
+          "type": "Connector",
+          "connector": "Microsoft Teams",
+          "operation": "Post message in a chat or channel",
+          "inputs": {
+            "poster": "Flow bot",
+            "location": "Chat with Flow bot",
+            "recipient": "@{outputs('Config')?['me']}",
+            "message": "@{concat('기록됨(', outputs('Inputs')?['kind'], '): ', outputs('Inputs')?['title'], ' — 번호는 잠시 후 목록에서 확인')}"
+          },
+          "note": "본인에게 Flow bot 메시지",
+          "runAfter": {
+            "If_action": [
+              "Succeeded"
+            ]
+          }
+        }
+      }
+    },
+    "Catch": {
+      "type": "Scope",
+      "runAfter": {
+        "Try": [
+          "Failed",
+          "TimedOut"
+        ]
+      },
+      "actions": {
+        "Failed_actions": {
+          "type": "FilterArray",
+          "note": "Try 안에서 실패한 액션만 추림",
+          "inputs": {
+            "from": "@result('Try')",
+            "where": "@equals(item()?['status'], 'Failed')"
+          },
+          "runAfter": {}
+        },
+        "Log_error": {
+          "type": "Connector",
+          "connector": "SharePoint",
+          "operation": "Create item",
+          "inputs": {
+            "site": "@{outputs('Config')?['site']}",
+            "list": "FlowErrorLog",
+            "item": {
+              "Title": "@{workflow()?['tags']?['flowDisplayName']}",
+              "FlowRunId": "@{workflow()?['run']?['name']}",
+              "FailedAction": "@{coalesce(first(body('Failed_actions'))?['name'], '')}",
+              "ErrorMessage": "@{coalesce(first(body('Failed_actions'))?['error']?['message'], '상세 메시지 없음(실행 기록 확인)')}",
+              "Severity/Value": "Critical",
+              "Resolved": false,
+              "RunUrl": "@{concat('https://make.powerautomate.com/environments/', workflow()?['tags']?['environmentName'], '/flows/', workflow()?['name'], '/runs/', workflow()?['run']?['name'])}"
+            }
+          },
+          "note": "공통 오류 로그 기록",
+          "runAfter": {
+            "Failed_actions": [
+              "Succeeded"
+            ]
+          }
+        },
+        "Terminate_failed": {
+          "type": "Terminate",
+          "inputs": {
+            "runStatus": "Failed",
+            "runError": {
+              "code": "FlowFailed",
+              "message": "@{concat('실패 액션: ', coalesce(first(body('Failed_actions'))?['name'], '?'))}"
+            }
+          },
+          "runAfter": {
+            "Log_error": [
+              "Succeeded",
+              "Failed",
+              "Skipped"
+            ]
+          }
+        }
+      },
+      "note": "실행 후 구성: Try가 '실패함'·'시간 초과됨'일 때"
+    }
+  }
+}

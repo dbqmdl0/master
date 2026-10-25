@@ -1,0 +1,319 @@
+{
+  "id": "P3P-F8",
+  "name": "P3P-F8 Copilot 추출 결과 검증 → 후보 생성",
+  "purpose": "회의 추출 접수(MeetingIntake)에 Copilot 결과를 붙여넣으면 가드 검증 후 후보를 만든다. 등록은 하지 않는다.",
+  "trigger": {
+    "kind": "SharePoint.WhenAnItemIsCreatedOrModified",
+    "inputs": {
+      "site": "{{SITE_URL}}",
+      "list": "MeetingIntake"
+    },
+    "conditions": [
+      "@or(equals(triggerOutputs()?['body/Status/Value'], '접수'), equals(triggerOutputs()?['body/Status/Value'], '재검증요청'))"
+    ]
+  },
+  "actions": {
+    "Config": {
+      "type": "Compose",
+      "note": "설정값 모음. 샌드박스→운영 전환 시 이 값만 바꾼다(트리거의 사이트·목록은 직접 다시 선택).",
+      "inputs": {
+        "site": "{{SITE_URL}}",
+        "me": "{{ME}}",
+        "hostWorkbook": "{{HOST_WORKBOOK}}",
+        "scriptFolder": "{{SCRIPT_FOLDER}}",
+        "prototypeMode": true,
+        "links": {
+          "myActions": "{{VIEW_MY_ACTIONS}}",
+          "decisionQueue": "{{VIEW_DECISION_QUEUE}}",
+          "candidates": "{{VIEW_CANDIDATES}}"
+        }
+      },
+      "runAfter": {}
+    },
+    "Try": {
+      "type": "Scope",
+      "runAfter": {
+        "Config": [
+          "Succeeded"
+        ]
+      },
+      "actions": {
+        "Get_roster": {
+          "type": "Connector",
+          "connector": "SharePoint",
+          "operation": "Get items",
+          "inputs": {
+            "site": "@{outputs('Config')?['site']}",
+            "list": "TeamRoster",
+            "top": 500
+          },
+          "note": "팀 명부(담당자 매핑 근거)",
+          "runAfter": {}
+        },
+        "Run_guard": {
+          "type": "Connector",
+          "connector": "Excel Online (Business)",
+          "operation": "Run script from SharePoint library",
+          "inputs": {
+            "workbook": "@{outputs('Config')?['hostWorkbook']}",
+            "script": "@{outputs('Config')?['scriptFolder']}/GuardExtraction.osts",
+            "parameters": {
+              "transcript": "@{triggerOutputs()?['body/Transcript']}",
+              "rosterJson": "@{string(body('Get_roster')?['value'])}",
+              "extractionJson": "@{triggerOutputs()?['body/ExtractionJson']}",
+              "meetingDate": "@{formatDateTime(triggerOutputs()?['body/MeetingDate'], 'yyyy-MM-dd')}"
+            }
+          },
+          "note": "G1~G6 검증(Office Scripts)",
+          "runAfter": {
+            "Get_roster": [
+              "Succeeded"
+            ]
+          }
+        },
+        "Get_old_candidates": {
+          "type": "Connector",
+          "connector": "SharePoint",
+          "operation": "Get items",
+          "inputs": {
+            "site": "@{outputs('Config')?['site']}",
+            "list": "ActionCandidates",
+            "filter": "IntakeID eq @{triggerOutputs()?['body/ID']} and Status eq '제안'",
+            "top": 500
+          },
+          "note": "재검증 시 이전 '제안' 후보",
+          "runAfter": {
+            "Run_guard": [
+              "Succeeded"
+            ]
+          }
+        },
+        "Supersede_old": {
+          "type": "Foreach",
+          "foreach": "@body('Get_old_candidates')?['value']",
+          "note": "이전 후보는 삭제하지 않고 '기각' 처리(이력 보존)",
+          "actions": {
+            "Mark_superseded": {
+              "type": "Connector",
+              "connector": "SharePoint",
+              "operation": "Update item",
+              "inputs": {
+                "site": "@{outputs('Config')?['site']}",
+                "list": "ActionCandidates",
+                "id": "@items('Supersede_old')?['ID']",
+                "item": {
+                  "Title": "@{items('Supersede_old')?['Title']}",
+                  "Kind/Value": "@{items('Supersede_old')?['Kind']?['Value']}",
+                  "IntakeID": "@items('Supersede_old')?['IntakeID']",
+                  "Verdict/Value": "@{items('Supersede_old')?['Verdict']?['Value']}",
+                  "Status/Value": "기각"
+                }
+              },
+              "note": "기각",
+              "runAfter": {}
+            }
+          },
+          "runAfter": {
+            "Get_old_candidates": [
+              "Succeeded"
+            ]
+          }
+        },
+        "If_parsed": {
+          "type": "If",
+          "expression": "@equals(body('Run_guard')?['result']?['ok'], true)",
+          "actions": {
+            "Create_candidates": {
+              "type": "Foreach",
+              "foreach": "@body('Run_guard')?['result']?['candidates']",
+              "note": "후보 1건 = 1행",
+              "actions": {
+                "Create_candidate": {
+                  "type": "Connector",
+                  "connector": "SharePoint",
+                  "operation": "Create item",
+                  "inputs": {
+                    "site": "@{outputs('Config')?['site']}",
+                    "list": "ActionCandidates",
+                    "item": {
+                      "Title": "@{if(greater(length(items('Create_candidates')?['title']), 250), substring(items('Create_candidates')?['title'], 0, 250), items('Create_candidates')?['title'])}",
+                      "Kind/Value": "@{items('Create_candidates')?['kind']}",
+                      "IntakeID": "@triggerOutputs()?['body/ID']",
+                      "Ref": "@items('Create_candidates')?['ref']",
+                      "MeetingName": "@{triggerOutputs()?['body/Title']}",
+                      "MeetingDate": "@{formatDateTime(triggerOutputs()?['body/MeetingDate'], 'yyyy-MM-dd')}",
+                      "OwnerName": "@{items('Create_candidates')?['ownerName']}",
+                      "OwnerEmail": "@{items('Create_candidates')?['ownerEmail']}",
+                      "DueDate": "@if(empty(items('Create_candidates')?['dueDate']), null, items('Create_candidates')?['dueDate'])",
+                      "Evidence": "@{items('Create_candidates')?['evidence']}",
+                      "Verdict/Value": "@{items('Create_candidates')?['verdict']}",
+                      "Reasons": "@{items('Create_candidates')?['reasons']}",
+                      "Status/Value": "제안"
+                    }
+                  },
+                  "note": "후보 등록(상태: 제안)",
+                  "runAfter": {}
+                }
+              },
+              "runAfter": {}
+            },
+            "Mark_intake_done": {
+              "type": "Connector",
+              "connector": "SharePoint",
+              "operation": "Update item",
+              "inputs": {
+                "site": "@{outputs('Config')?['site']}",
+                "list": "MeetingIntake",
+                "id": "@triggerOutputs()?['body/ID']",
+                "item": {
+                  "Title": "@{triggerOutputs()?['body/Title']}",
+                  "MeetingDate": "@{triggerOutputs()?['body/MeetingDate']}",
+                  "Transcript": "@{triggerOutputs()?['body/Transcript']}",
+                  "ExtractionJson": "@{triggerOutputs()?['body/ExtractionJson']}",
+                  "Status/Value": "검증완료",
+                  "RecommendedCount": "@body('Run_guard')?['result']?['recommendedCount']",
+                  "ReviewCount": "@body('Run_guard')?['result']?['reviewCount']",
+                  "ResultSummary": "@{concat('추천 ', string(body('Run_guard')?['result']?['recommendedCount']), '건 · 검토필요 ', string(body('Run_guard')?['result']?['reviewCount']), '건', if(empty(body('Run_guard')?['result']?['schemaErrors']), '', concat(' · 형식 오류: ', join(body('Run_guard')?['result']?['schemaErrors'], '; '))))}",
+                  "ProcessedAt": "@{utcNow()}"
+                }
+              },
+              "note": "접수 완료 표시(자기 재실행 차단)",
+              "runAfter": {
+                "Create_candidates": [
+                  "Succeeded"
+                ]
+              }
+            },
+            "Tell_candidates": {
+              "type": "Connector",
+              "connector": "Microsoft Teams",
+              "operation": "Post message in a chat or channel",
+              "inputs": {
+                "poster": "Flow bot",
+                "location": "Chat with Flow bot",
+                "recipient": "@{outputs('Config')?['me']}",
+                "message": "@{concat('회의 \"', triggerOutputs()?['body/Title'], '\" 후보 ', string(length(body('Run_guard')?['result']?['candidates'])), '건(추천 ', string(body('Run_guard')?['result']?['recommendedCount']), ') — 확인 후 승인하세요: ', outputs('Config')?['links']?['candidates'])}"
+              },
+              "note": "본인에게 Flow bot 메시지",
+              "runAfter": {
+                "Mark_intake_done": [
+                  "Succeeded"
+                ]
+              }
+            }
+          },
+          "note": "JSON 해석 성공 여부",
+          "else": {
+            "actions": {
+              "Mark_intake_error": {
+                "type": "Connector",
+                "connector": "SharePoint",
+                "operation": "Update item",
+                "inputs": {
+                  "site": "@{outputs('Config')?['site']}",
+                  "list": "MeetingIntake",
+                  "id": "@triggerOutputs()?['body/ID']",
+                  "item": {
+                    "Title": "@{triggerOutputs()?['body/Title']}",
+                    "MeetingDate": "@{triggerOutputs()?['body/MeetingDate']}",
+                    "Transcript": "@{triggerOutputs()?['body/Transcript']}",
+                    "ExtractionJson": "@{triggerOutputs()?['body/ExtractionJson']}",
+                    "Status/Value": "오류",
+                    "ResultSummary": "@{body('Run_guard')?['result']?['parseError']}",
+                    "ProcessedAt": "@{utcNow()}"
+                  }
+                },
+                "note": "오류 표시",
+                "runAfter": {}
+              },
+              "Tell_parse_error": {
+                "type": "Connector",
+                "connector": "Microsoft Teams",
+                "operation": "Post message in a chat or channel",
+                "inputs": {
+                  "poster": "Flow bot",
+                  "location": "Chat with Flow bot",
+                  "recipient": "@{outputs('Config')?['me']}",
+                  "message": "@{concat('회의 \"', triggerOutputs()?['body/Title'], '\" 추출 결과를 읽지 못했습니다: ', body('Run_guard')?['result']?['parseError'])}"
+                },
+                "note": "본인에게 Flow bot 메시지",
+                "runAfter": {
+                  "Mark_intake_error": [
+                    "Succeeded"
+                  ]
+                }
+              }
+            }
+          },
+          "runAfter": {
+            "Supersede_old": [
+              "Succeeded"
+            ]
+          }
+        }
+      }
+    },
+    "Catch": {
+      "type": "Scope",
+      "runAfter": {
+        "Try": [
+          "Failed",
+          "TimedOut"
+        ]
+      },
+      "actions": {
+        "Failed_actions": {
+          "type": "FilterArray",
+          "note": "Try 안에서 실패한 액션만 추림",
+          "inputs": {
+            "from": "@result('Try')",
+            "where": "@equals(item()?['status'], 'Failed')"
+          },
+          "runAfter": {}
+        },
+        "Log_error": {
+          "type": "Connector",
+          "connector": "SharePoint",
+          "operation": "Create item",
+          "inputs": {
+            "site": "@{outputs('Config')?['site']}",
+            "list": "FlowErrorLog",
+            "item": {
+              "Title": "@{workflow()?['tags']?['flowDisplayName']}",
+              "FlowRunId": "@{workflow()?['run']?['name']}",
+              "FailedAction": "@{coalesce(first(body('Failed_actions'))?['name'], '')}",
+              "ErrorMessage": "@{coalesce(first(body('Failed_actions'))?['error']?['message'], '상세 메시지 없음(실행 기록 확인)')}",
+              "Severity/Value": "Critical",
+              "Resolved": false,
+              "RunUrl": "@{concat('https://make.powerautomate.com/environments/', workflow()?['tags']?['environmentName'], '/flows/', workflow()?['name'], '/runs/', workflow()?['run']?['name'])}"
+            }
+          },
+          "note": "공통 오류 로그 기록",
+          "runAfter": {
+            "Failed_actions": [
+              "Succeeded"
+            ]
+          }
+        },
+        "Terminate_failed": {
+          "type": "Terminate",
+          "inputs": {
+            "runStatus": "Failed",
+            "runError": {
+              "code": "FlowFailed",
+              "message": "@{concat('실패 액션: ', coalesce(first(body('Failed_actions'))?['name'], '?'))}"
+            }
+          },
+          "runAfter": {
+            "Log_error": [
+              "Succeeded",
+              "Failed",
+              "Skipped"
+            ]
+          }
+        }
+      },
+      "note": "실행 후 구성: Try가 '실패함'·'시간 초과됨'일 때"
+    }
+  }
+}

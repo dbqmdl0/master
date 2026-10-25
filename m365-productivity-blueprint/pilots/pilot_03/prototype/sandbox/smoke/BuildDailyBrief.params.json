@@ -1,0 +1,10 @@
+{
+  "meEmail": "seoyeon.han@example.com",
+  "todayKst": "2026-10-26",
+  "eventsJson": "[{\"subject\": \"[가상] 주간 공급 조정 회의\", \"start\": \"2026-10-26T00:30:00.0000000\", \"end\": \"2026-10-26T01:30:00.0000000\", \"isAllDay\": false, \"organizer\": \"seoyeon.han@example.com\"}]",
+  "actionsJson": "[{\"ActionID\": \"ACT-2026-00001\", \"Title\": \"[가상] PLT-B 11월 CAPA 확인\", \"DueDate\": \"2026-10-22\", \"Status\": {\"Value\": \"진행중\"}, \"ActionType\": {\"Value\": \"실행\"}, \"Owner\": {\"Email\": \"seoyeon.han@example.com\"}}]",
+  "decisionsJson": "[]",
+  "requestsJson": "[]",
+  "holidaysJson": "[]",
+  "linksJson": "{}"
+}

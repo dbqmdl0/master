@@ -1,0 +1,343 @@
+{
+  "id": "P3P-F7",
+  "name": "P3P-F7 액션 리마인더(담당자별 하루 1장)",
+  "purpose": "평일 08:30 기한 D-1·당일·초과 액션을 담당자별 1장으로 알림. 같은 날 재알림 없음. 프로토타입 모드는 본인에게만.",
+  "trigger": {
+    "kind": "Recurrence",
+    "recurrence": {
+      "frequency": "Week",
+      "interval": 1,
+      "timeZone": "Korea Standard Time",
+      "schedule": {
+        "weekDays": [
+          "Monday",
+          "Tuesday",
+          "Wednesday",
+          "Thursday",
+          "Friday"
+        ],
+        "hours": [
+          8
+        ],
+        "minutes": [
+          30
+        ]
+      }
+    }
+  },
+  "actions": {
+    "Config": {
+      "type": "Compose",
+      "note": "설정값 모음. 샌드박스→운영 전환 시 이 값만 바꾼다(트리거의 사이트·목록은 직접 다시 선택).",
+      "inputs": {
+        "site": "{{SITE_URL}}",
+        "me": "{{ME}}",
+        "hostWorkbook": "{{HOST_WORKBOOK}}",
+        "scriptFolder": "{{SCRIPT_FOLDER}}",
+        "prototypeMode": true,
+        "links": {
+          "myActions": "{{VIEW_MY_ACTIONS}}",
+          "decisionQueue": "{{VIEW_DECISION_QUEUE}}",
+          "candidates": "{{VIEW_CANDIDATES}}"
+        }
+      },
+      "runAfter": {}
+    },
+    "Today": {
+      "type": "Compose",
+      "inputs": "@{convertFromUtc(utcNow(), 'Korea Standard Time', 'yyyy-MM-dd')}",
+      "note": "오늘(KST)",
+      "runAfter": {
+        "Config": [
+          "Succeeded"
+        ]
+      }
+    },
+    "DayStartUtc": {
+      "type": "Compose",
+      "inputs": "@{convertToUtc(concat(outputs('Today'), 'T00:00:00'), 'Korea Standard Time')}",
+      "note": "오늘 0시(KST)를 UTC로",
+      "runAfter": {
+        "Today": [
+          "Succeeded"
+        ]
+      }
+    },
+    "Init_skipped": {
+      "type": "InitializeVariable",
+      "inputs": {
+        "name": "varSkipped",
+        "type": "Array",
+        "value": []
+      },
+      "runAfter": {
+        "DayStartUtc": [
+          "Succeeded"
+        ]
+      }
+    },
+    "Try": {
+      "type": "Scope",
+      "runAfter": {
+        "Init_skipped": [
+          "Succeeded"
+        ]
+      },
+      "actions": {
+        "Get_holidays": {
+          "type": "Connector",
+          "connector": "SharePoint",
+          "operation": "Get items",
+          "inputs": {
+            "site": "@{outputs('Config')?['site']}",
+            "list": "Holidays",
+            "top": 500
+          },
+          "note": "휴무일",
+          "runAfter": {}
+        },
+        "Get_due_actions": {
+          "type": "Connector",
+          "connector": "SharePoint",
+          "operation": "Get items",
+          "inputs": {
+            "site": "@{outputs('Config')?['site']}",
+            "list": "ActionItems",
+            "filter": "(Status eq '미착수' or Status eq '진행중') and DueDate le '@{addDays(outputs('Today'), 1, 'yyyy-MM-dd')}'",
+            "top": 2000
+          },
+          "note": "내일까지 기한인 미결 액션",
+          "runAfter": {
+            "Get_holidays": [
+              "Succeeded"
+            ]
+          }
+        },
+        "Run_digest": {
+          "type": "Connector",
+          "connector": "Excel Online (Business)",
+          "operation": "Run script from SharePoint library",
+          "inputs": {
+            "workbook": "@{outputs('Config')?['hostWorkbook']}",
+            "script": "@{outputs('Config')?['scriptFolder']}/BuildReminderDigest.osts",
+            "parameters": {
+              "todayKst": "@{outputs('Today')}",
+              "actionsJson": "@{string(body('Get_due_actions')?['value'])}",
+              "holidaysJson": "@{string(body('Get_holidays')?['value'])}",
+              "viewUrl": "@{outputs('Config')?['links']?['myActions']}"
+            }
+          },
+          "note": "담당자별 카드 생성(Office Scripts)",
+          "runAfter": {
+            "Get_due_actions": [
+              "Succeeded"
+            ]
+          }
+        },
+        "If_skip": {
+          "type": "If",
+          "expression": "@equals(body('Run_digest')?['result']?['skip'], true)",
+          "actions": {
+            "Stop_skip": {
+              "type": "Terminate",
+              "inputs": {
+                "runStatus": "Succeeded",
+                "runError": {
+                  "code": "Skip",
+                  "message": "@{body('Run_digest')?['result']?['reason']}"
+                }
+              },
+              "runAfter": {}
+            }
+          },
+          "note": "",
+          "runAfter": {
+            "Run_digest": [
+              "Succeeded"
+            ]
+          }
+        },
+        "For_each_digest": {
+          "type": "Foreach",
+          "foreach": "@body('Run_digest')?['result']?['digests']",
+          "note": "담당자별 반복(동시성 1)",
+          "actions": {
+            "If_allowed": {
+              "type": "If",
+              "expression": "@or(not(outputs('Config')?['prototypeMode']), equals(toLower(items('For_each_digest')?['ownerEmail']), toLower(outputs('Config')?['me'])))",
+              "actions": {
+                "Post_digest": {
+                  "type": "Connector",
+                  "connector": "Microsoft Teams",
+                  "operation": "Post card in a chat or channel",
+                  "inputs": {
+                    "poster": "Flow bot",
+                    "location": "Chat with Flow bot",
+                    "recipient": "@{items('For_each_digest')?['ownerEmail']}",
+                    "card": "@{items('For_each_digest')?['cardJson']}"
+                  },
+                  "note": "담당자에게 카드",
+                  "runAfter": {}
+                },
+                "For_each_item": {
+                  "type": "Foreach",
+                  "foreach": "@items('For_each_digest')?['itemIds']",
+                  "note": "알린 항목 기록",
+                  "actions": {
+                    "Get_action": {
+                      "type": "Connector",
+                      "connector": "SharePoint",
+                      "operation": "Get item",
+                      "inputs": {
+                        "site": "@{outputs('Config')?['site']}",
+                        "list": "ActionItems",
+                        "id": "@items('For_each_item')"
+                      },
+                      "note": "현재 값 읽기(Update 필수 입력용)",
+                      "runAfter": {}
+                    },
+                    "Mark_reminded": {
+                      "type": "Connector",
+                      "connector": "SharePoint",
+                      "operation": "Update item",
+                      "inputs": {
+                        "site": "@{outputs('Config')?['site']}",
+                        "list": "ActionItems",
+                        "id": "@items('For_each_item')",
+                        "item": {
+                          "Title": "@{body('Get_action')?['Title']}",
+                          "Owner/Claims": "@{body('Get_action')?['Owner']?['Claims']}",
+                          "Status/Value": "@{body('Get_action')?['Status']?['Value']}",
+                          "ActionType/Value": "@{body('Get_action')?['ActionType']?['Value']}",
+                          "ReminderCount": "@add(coalesce(body('Get_action')?['ReminderCount'], 0), 1)",
+                          "LastRemindedAt": "@{utcNow()}"
+                        }
+                      },
+                      "note": "리마인더 횟수·시각 기록",
+                      "runAfter": {
+                        "Get_action": [
+                          "Succeeded"
+                        ]
+                      }
+                    }
+                  },
+                  "runAfter": {
+                    "Post_digest": [
+                      "Succeeded"
+                    ]
+                  }
+                }
+              },
+              "note": "프로토타입 모드에서는 본인에게만 발송",
+              "else": {
+                "actions": {
+                  "Remember_skipped": {
+                    "type": "AppendToArrayVariable",
+                    "inputs": {
+                      "name": "varSkipped",
+                      "value": "@items('For_each_digest')?['ownerEmail']"
+                    },
+                    "runAfter": {}
+                  }
+                }
+              },
+              "runAfter": {}
+            }
+          },
+          "runAfter": {
+            "If_skip": [
+              "Succeeded"
+            ]
+          }
+        },
+        "If_any_skipped": {
+          "type": "If",
+          "expression": "@greater(length(variables('varSkipped')), 0)",
+          "actions": {
+            "Tell_skipped": {
+              "type": "Connector",
+              "connector": "Microsoft Teams",
+              "operation": "Post message in a chat or channel",
+              "inputs": {
+                "poster": "Flow bot",
+                "location": "Chat with Flow bot",
+                "recipient": "@{outputs('Config')?['me']}",
+                "message": "@{concat('프로토타입 모드: 다른 담당자 ', string(length(variables('varSkipped'))), '명에게는 발송하지 않았습니다.')}"
+              },
+              "note": "본인에게 Flow bot 메시지",
+              "runAfter": {}
+            }
+          },
+          "note": "",
+          "runAfter": {
+            "For_each_digest": [
+              "Succeeded"
+            ]
+          }
+        }
+      }
+    },
+    "Catch": {
+      "type": "Scope",
+      "runAfter": {
+        "Try": [
+          "Failed",
+          "TimedOut"
+        ]
+      },
+      "actions": {
+        "Failed_actions": {
+          "type": "FilterArray",
+          "note": "Try 안에서 실패한 액션만 추림",
+          "inputs": {
+            "from": "@result('Try')",
+            "where": "@equals(item()?['status'], 'Failed')"
+          },
+          "runAfter": {}
+        },
+        "Log_error": {
+          "type": "Connector",
+          "connector": "SharePoint",
+          "operation": "Create item",
+          "inputs": {
+            "site": "@{outputs('Config')?['site']}",
+            "list": "FlowErrorLog",
+            "item": {
+              "Title": "@{workflow()?['tags']?['flowDisplayName']}",
+              "FlowRunId": "@{workflow()?['run']?['name']}",
+              "FailedAction": "@{coalesce(first(body('Failed_actions'))?['name'], '')}",
+              "ErrorMessage": "@{coalesce(first(body('Failed_actions'))?['error']?['message'], '상세 메시지 없음(실행 기록 확인)')}",
+              "Severity/Value": "Critical",
+              "Resolved": false,
+              "RunUrl": "@{concat('https://make.powerautomate.com/environments/', workflow()?['tags']?['environmentName'], '/flows/', workflow()?['name'], '/runs/', workflow()?['run']?['name'])}"
+            }
+          },
+          "note": "공통 오류 로그 기록",
+          "runAfter": {
+            "Failed_actions": [
+              "Succeeded"
+            ]
+          }
+        },
+        "Terminate_failed": {
+          "type": "Terminate",
+          "inputs": {
+            "runStatus": "Failed",
+            "runError": {
+              "code": "FlowFailed",
+              "message": "@{concat('실패 액션: ', coalesce(first(body('Failed_actions'))?['name'], '?'))}"
+            }
+          },
+          "runAfter": {
+            "Log_error": [
+              "Succeeded",
+              "Failed",
+              "Skipped"
+            ]
+          }
+        }
+      },
+      "note": "실행 후 구성: Try가 '실패함'·'시간 초과됨'일 때"
+    }
+  }
+}

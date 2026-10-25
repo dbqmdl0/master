@@ -1,0 +1,6 @@
+{
+  "todayKst": "2026-10-26",
+  "holidaysJson": "[]",
+  "viewUrl": "",
+  "actionsJson": "[{\"ID\": 1, \"ActionID\": \"ACT-2026-00001\", \"Title\": \"[가상] 초과 건\", \"DueDate\": \"2026-10-23\", \"Status\": {\"Value\": \"미착수\"}, \"Owner\": {\"Email\": \"seoyeon.han@example.com\"}}]"
+}

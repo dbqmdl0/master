@@ -21,7 +21,7 @@ KT&G SCM 조직을 위한 Microsoft 365 기반 업무 방식 혁신 설계와 �
 13_Quality_Self_Assessment.md
 pilots/pilot_01  통합 업무요청 허브       (process_design, implementation_guide, test_cases, automation_assets)
 pilots/pilot_02  공장 데이터 계약·자동 검증
-pilots/pilot_03  결정–액션 루프 + 아침 브리핑
+pilots/pilot_03  결정–액션 루프 + 아침 브리핑  ← prototype/ 에 실행 단계 프로토타입(구축 가이드·흐름 정의·테스트)
 tools/           build_backlog.py, check_consistency.py, run_all_checks.sh
 ```
 
@@ -34,6 +34,9 @@ tools/           build_backlog.py, check_consistency.py, run_all_checks.sh
 ```
 
 2026-10-25 실행 결과: Pilot 01 19건, Pilot 02 Python 5건 + Office Scripts 15건, Pilot 03 10건 테스트 통과, 정합성 검사 29/29 통과.
+
+## 실행 단계 (2026-10-26)
+선정 파일럿: **Pilot 03**. `pilots/pilot_03/prototype/README.md`부터 읽으세요. 가상 데이터로 동작하는 프로토타입(Office Scripts 3종, 흐름 정의 9개, 에뮬레이터 테스트 56건 통과)과 클릭 순서 구축 가이드가 있습니다.
 
 ## 주의
 - 회사 M365 테넌트에 배포되지 않았다. 배포는 각 `implementation_guide.md`를 따른다.

@@ -1,0 +1,290 @@
+{
+  "id": "P3P-F6",
+  "name": "P3P-F6 아침 브리핑",
+  "purpose": "평일 07:40 본인에게 '오늘 먼저 처리할 5가지' 카드. 계산은 Office Scripts, Teams 실패 시 본인 메일로 대체.",
+  "trigger": {
+    "kind": "Recurrence",
+    "recurrence": {
+      "frequency": "Week",
+      "interval": 1,
+      "timeZone": "Korea Standard Time",
+      "schedule": {
+        "weekDays": [
+          "Monday",
+          "Tuesday",
+          "Wednesday",
+          "Thursday",
+          "Friday"
+        ],
+        "hours": [
+          7
+        ],
+        "minutes": [
+          40
+        ]
+      }
+    }
+  },
+  "actions": {
+    "Config": {
+      "type": "Compose",
+      "note": "설정값 모음. 샌드박스→운영 전환 시 이 값만 바꾼다(트리거의 사이트·목록은 직접 다시 선택).",
+      "inputs": {
+        "site": "{{SITE_URL}}",
+        "me": "{{ME}}",
+        "hostWorkbook": "{{HOST_WORKBOOK}}",
+        "scriptFolder": "{{SCRIPT_FOLDER}}",
+        "prototypeMode": true,
+        "links": {
+          "myActions": "{{VIEW_MY_ACTIONS}}",
+          "decisionQueue": "{{VIEW_DECISION_QUEUE}}",
+          "candidates": "{{VIEW_CANDIDATES}}"
+        }
+      },
+      "runAfter": {}
+    },
+    "Today": {
+      "type": "Compose",
+      "inputs": "@{convertFromUtc(utcNow(), 'Korea Standard Time', 'yyyy-MM-dd')}",
+      "note": "오늘(KST)",
+      "runAfter": {
+        "Config": [
+          "Succeeded"
+        ]
+      }
+    },
+    "DayStartUtc": {
+      "type": "Compose",
+      "inputs": "@{convertToUtc(concat(outputs('Today'), 'T00:00:00'), 'Korea Standard Time')}",
+      "note": "오늘 0시(KST)를 UTC로",
+      "runAfter": {
+        "Today": [
+          "Succeeded"
+        ]
+      }
+    },
+    "Try": {
+      "type": "Scope",
+      "runAfter": {
+        "DayStartUtc": [
+          "Succeeded"
+        ]
+      },
+      "actions": {
+        "Get_holidays": {
+          "type": "Connector",
+          "connector": "SharePoint",
+          "operation": "Get items",
+          "inputs": {
+            "site": "@{outputs('Config')?['site']}",
+            "list": "Holidays",
+            "top": 500
+          },
+          "note": "휴무일",
+          "runAfter": {}
+        },
+        "Get_events": {
+          "type": "Connector",
+          "connector": "Office 365 Outlook",
+          "operation": "Get calendar view of events (V3)",
+          "inputs": {
+            "calendarId": "Calendar",
+            "startTime": "@{outputs('DayStartUtc')}",
+            "endTime": "@{addDays(outputs('DayStartUtc'), 1)}"
+          },
+          "note": "오늘 일정",
+          "runAfter": {
+            "Get_holidays": [
+              "Succeeded"
+            ]
+          }
+        },
+        "Get_my_actions": {
+          "type": "Connector",
+          "connector": "SharePoint",
+          "operation": "Get items",
+          "inputs": {
+            "site": "@{outputs('Config')?['site']}",
+            "list": "ActionItems",
+            "filter": "Owner/EMail eq '@{outputs('Config')?['me']}' and (Status eq '미착수' or Status eq '진행중')",
+            "top": 500
+          },
+          "note": "내 미결 액션",
+          "runAfter": {
+            "Get_events": [
+              "Succeeded"
+            ]
+          }
+        },
+        "Get_my_decisions": {
+          "type": "Connector",
+          "connector": "SharePoint",
+          "operation": "Get items",
+          "inputs": {
+            "site": "@{outputs('Config')?['site']}",
+            "list": "DecisionLog",
+            "filter": "Status eq '결정요청' and Decider/EMail eq '@{outputs('Config')?['me']}'",
+            "top": 200
+          },
+          "note": "내가 결정할 대기 건",
+          "runAfter": {
+            "Get_my_actions": [
+              "Succeeded"
+            ]
+          }
+        },
+        "Run_brief": {
+          "type": "Connector",
+          "connector": "Excel Online (Business)",
+          "operation": "Run script from SharePoint library",
+          "inputs": {
+            "workbook": "@{outputs('Config')?['hostWorkbook']}",
+            "script": "@{outputs('Config')?['scriptFolder']}/BuildDailyBrief.osts",
+            "parameters": {
+              "meEmail": "@{outputs('Config')?['me']}",
+              "todayKst": "@{outputs('Today')}",
+              "eventsJson": "@{string(body('Get_events')?['value'])}",
+              "actionsJson": "@{string(body('Get_my_actions')?['value'])}",
+              "decisionsJson": "@{string(body('Get_my_decisions')?['value'])}",
+              "requestsJson": "[]",
+              "holidaysJson": "@{string(body('Get_holidays')?['value'])}",
+              "linksJson": "@{string(outputs('Config')?['links'])}"
+            }
+          },
+          "note": "점수 계산·카드 생성(Office Scripts)",
+          "runAfter": {
+            "Get_my_decisions": [
+              "Succeeded"
+            ]
+          }
+        },
+        "If_skip": {
+          "type": "If",
+          "expression": "@equals(body('Run_brief')?['result']?['skip'], true)",
+          "actions": {
+            "Stop_skip": {
+              "type": "Terminate",
+              "inputs": {
+                "runStatus": "Succeeded",
+                "runError": {
+                  "code": "Skip",
+                  "message": "@{body('Run_brief')?['result']?['reason']}"
+                }
+              },
+              "runAfter": {}
+            }
+          },
+          "note": "주말·휴무일이면 게시 안 함",
+          "runAfter": {
+            "Run_brief": [
+              "Succeeded"
+            ]
+          }
+        },
+        "Post_card": {
+          "type": "Connector",
+          "connector": "Microsoft Teams",
+          "operation": "Post card in a chat or channel",
+          "inputs": {
+            "poster": "Flow bot",
+            "location": "Chat with Flow bot",
+            "recipient": "@{outputs('Config')?['me']}",
+            "card": "@{body('Run_brief')?['result']?['cardJson']}"
+          },
+          "note": "본인에게 Flow bot 채팅으로 카드 게시",
+          "runAfter": {
+            "If_skip": [
+              "Succeeded"
+            ]
+          }
+        }
+      }
+    },
+    "Catch": {
+      "type": "Scope",
+      "runAfter": {
+        "Try": [
+          "Failed",
+          "TimedOut"
+        ]
+      },
+      "actions": {
+        "Failed_actions": {
+          "type": "FilterArray",
+          "note": "Try 안에서 실패한 액션만 추림",
+          "inputs": {
+            "from": "@result('Try')",
+            "where": "@equals(item()?['status'], 'Failed')"
+          },
+          "runAfter": {}
+        },
+        "Log_error": {
+          "type": "Connector",
+          "connector": "SharePoint",
+          "operation": "Create item",
+          "inputs": {
+            "site": "@{outputs('Config')?['site']}",
+            "list": "FlowErrorLog",
+            "item": {
+              "Title": "@{workflow()?['tags']?['flowDisplayName']}",
+              "FlowRunId": "@{workflow()?['run']?['name']}",
+              "FailedAction": "@{coalesce(first(body('Failed_actions'))?['name'], '')}",
+              "ErrorMessage": "@{coalesce(first(body('Failed_actions'))?['error']?['message'], '상세 메시지 없음(실행 기록 확인)')}",
+              "Severity/Value": "Critical",
+              "Resolved": false,
+              "RunUrl": "@{concat('https://make.powerautomate.com/environments/', workflow()?['tags']?['environmentName'], '/flows/', workflow()?['name'], '/runs/', workflow()?['run']?['name'])}"
+            }
+          },
+          "note": "공통 오류 로그 기록",
+          "runAfter": {
+            "Failed_actions": [
+              "Succeeded"
+            ]
+          }
+        },
+        "If_teams_failed": {
+          "type": "If",
+          "expression": "@equals(first(body('Failed_actions'))?['name'], 'Post_card')",
+          "actions": {
+            "Email_fallback": {
+              "type": "Connector",
+              "connector": "Office 365 Outlook",
+              "operation": "Send an email (V2)",
+              "inputs": {
+                "to": "@{outputs('Config')?['me']}",
+                "subject": "[아침 브리핑] Teams 게시 실패 — 메일로 대체",
+                "body": "@{body('Run_brief')?['result']?['htmlSummary']}"
+              },
+              "note": "Teams 카드 실패 시 본인 메일로 대체 발송",
+              "runAfter": {}
+            }
+          },
+          "note": "Teams 실패 시 대체",
+          "runAfter": {
+            "Log_error": [
+              "Succeeded"
+            ]
+          }
+        },
+        "Terminate_failed": {
+          "type": "Terminate",
+          "inputs": {
+            "runStatus": "Failed",
+            "runError": {
+              "code": "FlowFailed",
+              "message": "@{concat('실패 액션: ', coalesce(first(body('Failed_actions'))?['name'], '?'))}"
+            }
+          },
+          "runAfter": {
+            "If_teams_failed": [
+              "Succeeded",
+              "Failed",
+              "Skipped"
+            ]
+          }
+        }
+      },
+      "note": "실행 후 구성: Try가 '실패함'·'시간 초과됨'일 때"
+    }
+  }
+}

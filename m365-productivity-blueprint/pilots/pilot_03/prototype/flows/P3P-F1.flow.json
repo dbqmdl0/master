@@ -1,0 +1,200 @@
+{
+  "id": "P3P-F1",
+  "name": "P3P-F1 메일 플래그(Inbox) → 실행 등록",
+  "purpose": "Outlook 'Inbox' 폴더에서 플래그한 메일을 ActionItems(실행)로 등록. 같은 메일 재플래그 시 중복 생성 없음.",
+  "trigger": {
+    "kind": "Outlook.WhenAnEmailIsFlaggedV4",
+    "inputs": {
+      "folder": "Inbox"
+    },
+    "concurrency": 1
+  },
+  "actions": {
+    "Config": {
+      "type": "Compose",
+      "note": "설정값 모음. 샌드박스→운영 전환 시 이 값만 바꾼다(트리거의 사이트·목록은 직접 다시 선택).",
+      "inputs": {
+        "site": "{{SITE_URL}}",
+        "me": "{{ME}}",
+        "hostWorkbook": "{{HOST_WORKBOOK}}",
+        "scriptFolder": "{{SCRIPT_FOLDER}}",
+        "prototypeMode": true,
+        "links": {
+          "myActions": "{{VIEW_MY_ACTIONS}}",
+          "decisionQueue": "{{VIEW_DECISION_QUEUE}}",
+          "candidates": "{{VIEW_CANDIDATES}}"
+        }
+      },
+      "runAfter": {}
+    },
+    "Try": {
+      "type": "Scope",
+      "runAfter": {
+        "Config": [
+          "Succeeded"
+        ]
+      },
+      "actions": {
+        "Check_message_id": {
+          "type": "If",
+          "expression": "@empty(triggerOutputs()?['body/id'])",
+          "actions": {
+            "Stop_no_id": {
+              "type": "Terminate",
+              "inputs": {
+                "runStatus": "Failed",
+                "runError": {
+                  "code": "InputMissing",
+                  "message": "메일 ID가 없어 중복 확인을 할 수 없습니다"
+                }
+              },
+              "runAfter": {}
+            }
+          },
+          "note": "메일 ID 누락 방어",
+          "runAfter": {}
+        },
+        "Find_existing": {
+          "type": "Connector",
+          "connector": "SharePoint",
+          "operation": "Get items",
+          "inputs": {
+            "site": "@{outputs('Config')?['site']}",
+            "list": "ActionItems",
+            "filter": "SourceMessageId eq '@{replace(triggerOutputs()?['body/id'], '''', '''''')}'",
+            "top": 1
+          },
+          "note": "같은 메일로 이미 만든 액션이 있는지(중복 방지)",
+          "runAfter": {
+            "Check_message_id": [
+              "Succeeded"
+            ]
+          }
+        },
+        "If_duplicate": {
+          "type": "If",
+          "expression": "@greater(length(body('Find_existing')?['value']), 0)",
+          "actions": {
+            "Stop_duplicate": {
+              "type": "Terminate",
+              "inputs": {
+                "runStatus": "Succeeded",
+                "runError": {
+                  "code": "Duplicate",
+                  "message": "이미 등록된 메일"
+                }
+              },
+              "runAfter": {}
+            }
+          },
+          "note": "중복이면 성공으로 종료",
+          "runAfter": {
+            "Find_existing": [
+              "Succeeded"
+            ]
+          }
+        },
+        "Title_text": {
+          "type": "Compose",
+          "note": "제목 없음 대비 + 접두어",
+          "inputs": "@{concat('[메일] ', if(empty(triggerOutputs()?['body/subject']), '(제목 없음)', triggerOutputs()?['body/subject']))}",
+          "runAfter": {
+            "If_duplicate": [
+              "Succeeded"
+            ]
+          }
+        },
+        "Create_action": {
+          "type": "Connector",
+          "connector": "SharePoint",
+          "operation": "Create item",
+          "inputs": {
+            "site": "@{outputs('Config')?['site']}",
+            "list": "ActionItems",
+            "item": {
+              "Title": "@{if(greater(length(outputs('Title_text')), 250), substring(outputs('Title_text'), 0, 250), outputs('Title_text'))}",
+              "Owner/Claims": "@{outputs('Config')?['me']}",
+              "Status/Value": "미착수",
+              "ActionType/Value": "실행",
+              "Source/Value": "이메일",
+              "CreatedVia/Value": "Outlook 플래그",
+              "Priority/Value": "보통",
+              "SourceLink": "@{coalesce(triggerOutputs()?['body/webLink'], '')}",
+              "Evidence": "@{coalesce(triggerOutputs()?['body/bodyPreview'], '')}",
+              "SourceMessageId": "@{triggerOutputs()?['body/id']}",
+              "DueDate": "@if(empty(triggerOutputs()?['body/flag/dueDateTime/dateTime']), null, formatDateTime(triggerOutputs()?['body/flag/dueDateTime/dateTime'], 'yyyy-MM-dd'))"
+            }
+          },
+          "note": "액션 등록",
+          "runAfter": {
+            "Title_text": [
+              "Succeeded"
+            ]
+          }
+        }
+      }
+    },
+    "Catch": {
+      "type": "Scope",
+      "runAfter": {
+        "Try": [
+          "Failed",
+          "TimedOut"
+        ]
+      },
+      "actions": {
+        "Failed_actions": {
+          "type": "FilterArray",
+          "note": "Try 안에서 실패한 액션만 추림",
+          "inputs": {
+            "from": "@result('Try')",
+            "where": "@equals(item()?['status'], 'Failed')"
+          },
+          "runAfter": {}
+        },
+        "Log_error": {
+          "type": "Connector",
+          "connector": "SharePoint",
+          "operation": "Create item",
+          "inputs": {
+            "site": "@{outputs('Config')?['site']}",
+            "list": "FlowErrorLog",
+            "item": {
+              "Title": "@{workflow()?['tags']?['flowDisplayName']}",
+              "FlowRunId": "@{workflow()?['run']?['name']}",
+              "FailedAction": "@{coalesce(first(body('Failed_actions'))?['name'], '')}",
+              "ErrorMessage": "@{coalesce(first(body('Failed_actions'))?['error']?['message'], '상세 메시지 없음(실행 기록 확인)')}",
+              "Severity/Value": "Critical",
+              "Resolved": false,
+              "RunUrl": "@{concat('https://make.powerautomate.com/environments/', workflow()?['tags']?['environmentName'], '/flows/', workflow()?['name'], '/runs/', workflow()?['run']?['name'])}"
+            }
+          },
+          "note": "공통 오류 로그 기록",
+          "runAfter": {
+            "Failed_actions": [
+              "Succeeded"
+            ]
+          }
+        },
+        "Terminate_failed": {
+          "type": "Terminate",
+          "inputs": {
+            "runStatus": "Failed",
+            "runError": {
+              "code": "FlowFailed",
+              "message": "@{concat('실패 액션: ', coalesce(first(body('Failed_actions'))?['name'], '?'))}"
+            }
+          },
+          "runAfter": {
+            "Log_error": [
+              "Succeeded",
+              "Failed",
+              "Skipped"
+            ]
+          }
+        }
+      },
+      "note": "실행 후 구성: Try가 '실패함'·'시간 초과됨'일 때"
+    }
+  }
+}

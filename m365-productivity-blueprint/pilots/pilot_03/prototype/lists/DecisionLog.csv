@@ -1,0 +1,3 @@
+﻿Title,DecisionID,DecisionText,Rationale,OptionsConsidered,Status,Decider,RequestedBy,RequestedAt,DecidedAt,MeetingName,MeetingDate,Impact,ReviewDate,SourceLink,RelatedRequestID,SupersededBy,CreatedVia,PrevStatus,SourceMessageId
+[가상] 단산 SKU-MOCK-310 잔량 처리 방식,,잔량 판촉 소진 vs 폐기 결정 필요,,,결정요청,seoyeon.han@example.com,,2026-10-20,,,,,,,,,,,
+[가상] 10월 생산 동결 구간 2주 유지,,Frozen fence 2주 유지,,,확정,seoyeon.han@example.com,,,2026-10-19,,,,,,,,,,

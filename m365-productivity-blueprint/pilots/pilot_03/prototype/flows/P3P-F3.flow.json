@@ -1,0 +1,127 @@
+{
+  "id": "P3P-F3",
+  "name": "P3P-F3 ActionItems 번호·상태 기록",
+  "purpose": "ActionItems 새 항목에 ACT-연도-번호 부여, 상태 변경 시각 기록. 트리거 조건으로 자기 수정에 의한 재실행 차단.",
+  "trigger": {
+    "kind": "SharePoint.WhenAnItemIsCreatedOrModified",
+    "inputs": {
+      "site": "{{SITE_URL}}",
+      "list": "ActionItems"
+    },
+    "conditions": [
+      "@or(empty(triggerOutputs()?['body/ActionID']), not(equals(triggerOutputs()?['body/Status/Value'], coalesce(triggerOutputs()?['body/PrevStatus'], ''))))"
+    ]
+  },
+  "actions": {
+    "Config": {
+      "type": "Compose",
+      "note": "설정값 모음. 샌드박스→운영 전환 시 이 값만 바꾼다(트리거의 사이트·목록은 직접 다시 선택).",
+      "inputs": {
+        "site": "{{SITE_URL}}",
+        "me": "{{ME}}",
+        "hostWorkbook": "{{HOST_WORKBOOK}}",
+        "scriptFolder": "{{SCRIPT_FOLDER}}",
+        "prototypeMode": true,
+        "links": {
+          "myActions": "{{VIEW_MY_ACTIONS}}",
+          "decisionQueue": "{{VIEW_DECISION_QUEUE}}",
+          "candidates": "{{VIEW_CANDIDATES}}"
+        }
+      },
+      "runAfter": {}
+    },
+    "Try": {
+      "type": "Scope",
+      "runAfter": {
+        "Config": [
+          "Succeeded"
+        ]
+      },
+      "actions": {
+        "Update_item": {
+          "type": "Connector",
+          "connector": "SharePoint",
+          "operation": "Update item",
+          "inputs": {
+            "site": "@{outputs('Config')?['site']}",
+            "list": "ActionItems",
+            "id": "@triggerOutputs()?['body/ID']",
+            "item": {
+              "Title": "@{triggerOutputs()?['body/Title']}",
+              "Owner/Claims": "@{triggerOutputs()?['body/Owner/Claims']}",
+              "Status/Value": "@{triggerOutputs()?['body/Status/Value']}",
+              "ActionType/Value": "@{triggerOutputs()?['body/ActionType/Value']}",
+              "ActionID": "@{if(empty(triggerOutputs()?['body/ActionID']), concat('ACT-', convertFromUtc(triggerOutputs()?['body/Created'], 'Korea Standard Time', 'yyyy'), '-', formatNumber(triggerOutputs()?['body/ID'], '00000')), triggerOutputs()?['body/ActionID'])}",
+              "CompletedAt": "@if(equals(triggerOutputs()?['body/Status/Value'], '완료'), coalesce(triggerOutputs()?['body/CompletedAt'], utcNow()), null)",
+              "PrevStatus": "@{triggerOutputs()?['body/Status/Value']}"
+            }
+          },
+          "note": "번호 부여·상태 변경 기록. PrevStatus를 현재 상태로 맞춰 자기 재실행을 막는다",
+          "runAfter": {}
+        }
+      }
+    },
+    "Catch": {
+      "type": "Scope",
+      "runAfter": {
+        "Try": [
+          "Failed",
+          "TimedOut"
+        ]
+      },
+      "actions": {
+        "Failed_actions": {
+          "type": "FilterArray",
+          "note": "Try 안에서 실패한 액션만 추림",
+          "inputs": {
+            "from": "@result('Try')",
+            "where": "@equals(item()?['status'], 'Failed')"
+          },
+          "runAfter": {}
+        },
+        "Log_error": {
+          "type": "Connector",
+          "connector": "SharePoint",
+          "operation": "Create item",
+          "inputs": {
+            "site": "@{outputs('Config')?['site']}",
+            "list": "FlowErrorLog",
+            "item": {
+              "Title": "@{workflow()?['tags']?['flowDisplayName']}",
+              "FlowRunId": "@{workflow()?['run']?['name']}",
+              "FailedAction": "@{coalesce(first(body('Failed_actions'))?['name'], '')}",
+              "ErrorMessage": "@{coalesce(first(body('Failed_actions'))?['error']?['message'], '상세 메시지 없음(실행 기록 확인)')}",
+              "Severity/Value": "Critical",
+              "Resolved": false,
+              "RunUrl": "@{concat('https://make.powerautomate.com/environments/', workflow()?['tags']?['environmentName'], '/flows/', workflow()?['name'], '/runs/', workflow()?['run']?['name'])}"
+            }
+          },
+          "note": "공통 오류 로그 기록",
+          "runAfter": {
+            "Failed_actions": [
+              "Succeeded"
+            ]
+          }
+        },
+        "Terminate_failed": {
+          "type": "Terminate",
+          "inputs": {
+            "runStatus": "Failed",
+            "runError": {
+              "code": "FlowFailed",
+              "message": "@{concat('실패 액션: ', coalesce(first(body('Failed_actions'))?['name'], '?'))}"
+            }
+          },
+          "runAfter": {
+            "Log_error": [
+              "Succeeded",
+              "Failed",
+              "Skipped"
+            ]
+          }
+        }
+      },
+      "note": "실행 후 구성: Try가 '실패함'·'시간 초과됨'일 때"
+    }
+  }
+}
