@@ -40,5 +40,18 @@ Create a scheduled cloud flow that runs Monday to Friday at 7:40 AM, time zone (
 
 **성공 기준:** 테스트 › 수동 → 본인 메일 1통, 목록의 `[가상]` 항목이 기한 기준으로 표에 나뉘어 있음.
 
+### 실제 생성 결과 유형 B: 변수 + 각각에 적용 + 조건 3단 (2026-10-26 회사 화면에서 확인)
+AI가 `Initialise today/todayPlus2/duePast…` 변수, 각각에 적용 안의 조건(조건 → 조건 2 → 조건) + `Append to array`, `Select …`, `Table …`, `Initialise subject`, 메일 보내기(V2)로 만든 경우:
+| # | 고칠 곳 | 값 |
+|---|---|---|
+| B1 | `Initialise today` 값 | fx `convertFromUtc(utcNow(), 'Korea Standard Time', 'yyyy-MM-dd')` |
+| B2 | `Initialise todayPlus2` 값 | fx `addDays(variables('today'), 2, 'yyyy-MM-dd')` |
+| B3 | **첫 번째 조건(기한 지남)** — 빈 기한이 '지남'으로 잘못 들어가는 것 방지 | 왼쪽 fx `and(not(empty(item()?['DueDate'])), less(convertFromUtc(item()?['DueDate'], 'Korea Standard Time', 'yyyy-MM-dd'), variables('today')))` · 같음 · 오른쪽 fx `true` |
+| B4 | 조건 2(임박) | 왼쪽 fx `and(not(empty(item()?['DueDate'])), lessOrEquals(convertFromUtc(item()?['DueDate'], 'Korea Standard Time', 'yyyy-MM-dd'), variables('todayPlus2')))` · 같음 · `true` (조건 1이 거짓일 때만 오므로 '오늘 이후'는 이미 보장) |
+| B5 | 마지막 조건(기한 없음) | 왼쪽 fx `empty(item()?['DueDate'])` · 같음 · `true` |
+| B6 | 항목 가져오기 | 필터 쿼리 `Owner/EMail eq '본인메일' and (Status eq '미착수' or Status eq '진행중')`, 상위 개수 500 |
+| B7 | Select 3개 | 기한 `convertFromUtc(item()?['DueDate'], 'Korea Standard Time', 'yyyy-MM-dd')`(기한 없음 표는 기한 열 삭제), 상태 `item()?['Status']?['Value']`, 우선순위 `coalesce(item()?['Priority']?['Value'], '보통')` |
+| B8 | 메일 받는 사람 | 본인 주소만 |
+
 ## P3A-1 (메일 플래그 → 할 일)은 AI 생성을 권하지 않는다
 중복 방지·기존 항목 갱신·사후 점검 등 조건이 많아(액션 53개) AI 뼈대를 고치는 시간이 더 든다. BUILD_TABLES 표대로 직접 만든다. 막히는 단계는 오류 문구로 질문.
