@@ -9,8 +9,8 @@
 
 | 흐름 | 단계 | 목록(트리거·읽기·쓰기) | 커넥터(연결) | Office Scripts | 선행 흐름 | 첫 테스트 |
 |---|---|---|---|---|---|---|
-| **P3A-1** | 1주차 · A안 최소 구성 | `ActionItems`(쓰기·읽기)<br>`FlowErrorLog`(쓰기) | Office 365 Outlook, SharePoint, Microsoft Teams(알림, 선택) | 없음 | 없음 | 가상 메일 1통 플래그 → 할 일 1건 / 다시 플래그 → 늘지 않음 |
 | **P3A-2** | 1주차 · A안 최소 구성 | `ActionItems`(읽기)<br>`FlowErrorLog`(쓰기) | Office 365 Outlook, SharePoint | 없음 | 없음 | '테스트' 실행 → 본인 메일 1통(초과·임박·기한 없음 표) |
+| **P3A-1** | 1주차 · A안 최소 구성 | `ActionItems`(쓰기·읽기)<br>`FlowErrorLog`(쓰기) | Office 365 Outlook, SharePoint, Microsoft Teams(알림, 선택) | 없음 | 없음 | 가상 메일 1통 플래그 → 할 일 1건 / 다시 플래그 → 늘지 않음 |
 | **P3P-F3** | 1주차 · A안 최소 구성 | `ActionItems`(쓰기·읽기·트리거)<br>`FlowErrorLog`(쓰기) | Office 365 Outlook, SharePoint | 없음 | 없음 | 할 일 1건 상태 변경 → 액션번호·완료일시 기록, 다른 열 그대로 |
 | **P3P-F4** | 2주차 · 결정 기록·스크립트 브리핑(B안 전환) | `DecisionLog`(쓰기·읽기·트리거)<br>`FlowErrorLog`(쓰기) | Office 365 Outlook, SharePoint | 없음 | 없음 | 결정 1건 '확정'으로 변경 → 확정일·'확정 확인 필요' 표시 |
 | **P3P-F1** | 2주차 · 결정 기록·스크립트 브리핑(B안 전환) | `ActionItems`(쓰기·읽기)<br>`DecisionLog`(쓰기·읽기)<br>`FlowErrorLog`(쓰기) | Office 365 Outlook, SharePoint, Microsoft Teams(알림, 선택) | 없음 | P3P-F3, P3P-F4 | 범주 '결정요청' 메일 플래그 → DecisionLog '결정요청' 1건, 할 일 0건 |
@@ -30,8 +30,8 @@
 ### 1주차 · A안 최소 구성
 
 - [ ] 목록 만들기: `ActionItems`, `FlowErrorLog` (`LISTS_SETUP.md`)
-- [ ] P3A-1 만들기 → 첫 테스트: 가상 메일 1통 플래그 → 할 일 1건 / 다시 플래그 → 늘지 않음 · 2주차에 끄고 P3P-F1로 교체(같은 고유키라 중복 없음). P3P-F1과 동시에 켜지 않는다.
 - [ ] P3A-2 만들기 → 첫 테스트: '테스트' 실행 → 본인 메일 1통(초과·임박·기한 없음 표) · 2주차에 P3P-F6이 안정되면 끈다(둘 다 켜 두면 아침 메일 2통).
+- [ ] P3A-1 만들기 → 첫 테스트: 가상 메일 1통 플래그 → 할 일 1건 / 다시 플래그 → 늘지 않음 · 2주차에 끄고 P3P-F1로 교체(같은 고유키라 중복 없음). P3P-F1과 동시에 켜지 않는다.
 - [ ] P3P-F3 만들기 → 첫 테스트: 할 일 1건 상태 변경 → 액션번호·완료일시 기록, 다른 열 그대로
 
 ### 2주차 · 결정 기록·스크립트 브리핑(B안 전환)
@@ -67,8 +67,8 @@
 
 ## 3. 흐름별 사용 열(내부 이름) — 목록에 이 열이 없으면 흐름을 저장·실행할 수 없다
 
-- **P3A-1**: `ActionItems` ← ActionID, ActionType, CompletedAt, CreatedVia, DecisionID, DueDate, DueHint, DueHintChecked, Evidence, FlagDue, LastRemindedAt, Owner, PrevStatus, Priority, ReminderCount, Source, SourceKey, SourceLink, SourceMessageId, Status, SyncNote, Title; `FlowErrorLog` ← ErrorMessage, FailedAction, FlowRunId, Resolved, RunUrl, Severity, Title
 - **P3A-2**: `ActionItems` ← Owner, Status; `FlowErrorLog` ← ErrorMessage, FailedAction, FlowRunId, Resolved, RunUrl, Severity, Title
+- **P3A-1**: `ActionItems` ← ActionID, ActionType, CompletedAt, CreatedVia, DecisionID, DueDate, DueHint, DueHintChecked, Evidence, FlagDue, LastRemindedAt, Owner, PrevStatus, Priority, ReminderCount, Source, SourceKey, SourceLink, SourceMessageId, Status, SyncNote, Title; `FlowErrorLog` ← ErrorMessage, FailedAction, FlowRunId, Resolved, RunUrl, Severity, Title
 - **P3P-F3**: `ActionItems` ← ActionID, ActionType, CompletedAt, CreatedVia, DecisionID, DueDate, DueHint, DueHintChecked, Evidence, FlagDue, LastRemindedAt, Owner, PrevStatus, Priority, ReminderCount, Source, SourceKey, SourceLink, SourceMessageId, Status, SyncNote, Title; `FlowErrorLog` ← ErrorMessage, FailedAction, FlowRunId, Resolved, RunUrl, Severity, Title
 - **P3P-F4**: `DecisionLog` ← ConfirmationGap, CreatedVia, DecidedAt, Decider, DecisionID, DecisionText, FollowUps, Impact, MeetingDate, MeetingName, OptionsConsidered, PrevStatus, Rationale, RelatedRequestID, RequestedAt, RequestedBy, ReviewDate, SourceKey, SourceLink, SourceMessageId, Status, SupersededBy, SyncNote, Title; `FlowErrorLog` ← ErrorMessage, FailedAction, FlowRunId, Resolved, RunUrl, Severity, Title
 - **P3P-F1**: `ActionItems` ← ActionID, ActionType, CompletedAt, CreatedVia, DecisionID, DueDate, DueHint, DueHintChecked, Evidence, FlagDue, LastRemindedAt, Owner, PrevStatus, Priority, ReminderCount, Source, SourceKey, SourceLink, SourceMessageId, Status, SyncNote, Title; `DecisionLog` ← ConfirmationGap, CreatedVia, DecidedAt, Decider, DecisionID, DecisionText, FollowUps, Impact, MeetingDate, MeetingName, OptionsConsidered, PrevStatus, Rationale, RelatedRequestID, RequestedAt, RequestedBy, ReviewDate, SourceKey, SourceLink, SourceMessageId, Status, SupersededBy, SyncNote, Title; `FlowErrorLog` ← ErrorMessage, FailedAction, FlowRunId, Resolved, RunUrl, Severity, Title

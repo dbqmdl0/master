@@ -18,7 +18,7 @@ ROOT = Path(__file__).resolve().parent.parent
 STAGES = [
     ("1주차 · A안 최소 구성", {
         "lists": ["ActionItems", "FlowErrorLog"], "scripts": [], "files": [],
-        "flows": ["P3A-1", "P3A-2", "P3P-F3"]}),
+        "flows": ["P3A-2", "P3A-1", "P3P-F3"]}),  # 액션 24개짜리 P3A-2로 먼저 성공 경험 → 53개짜리 P3A-1
     ("2주차 · 결정 기록·스크립트 브리핑(B안 전환)", {
         "lists": ["DecisionLog", "Holidays"], "files": ["P3_AutomationHost.xlsx"],
         "scripts": ["BuildDailyBrief", "BuildReminderDigest", "ParseDueHint"],
